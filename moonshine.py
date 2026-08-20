@@ -1319,6 +1319,33 @@ def cmd_bench(args) -> int:
     return 0
 
 
+def native_launch_prefix() -> list[str]:
+    """Pin Moonlight to arm64 on Apple Silicon.
+
+    Moonlight is a universal binary with a perfectly good arm64 slice, but
+    translation is *inherited*: launched from an x86_64 parent - a shell started
+    under Rosetta, or any app that is itself translated - it runs under Rosetta
+    too. That is slower than it needs to be, and on macOS 26 it raises a
+    "support ending for Intel-based apps" alert naming Moonlight, which reads as
+    "this app has to be replaced" when the native build is already sitting
+    inside the bundle.
+
+    Confirmed on 2026-08-20 by launching it from a deliberately translated
+    parent: Qt writes its shader cache per architecture, and the x86_64 cache
+    was rewritten while the arm64 one stayed stale. Adding this prefix flipped
+    it back to arm64 from the same translated parent.
+
+    The hardware is read with sysctl rather than platform.machine(), because a
+    translated interpreter reports x86_64 - which is exactly the case this
+    exists to catch.
+    """
+    if sys.platform != "darwin":
+        return []
+    if run(["sysctl", "-n", "hw.optional.arm64"], timeout=10).stdout.strip() != "1":
+        return []
+    return ["arch", "-arm64"] if shutil.which("arch") else []
+
+
 def watch_for_failure(log_path: str, proc) -> list[str]:
     """Tail our own log and stop Moonlight once it reports it cannot connect.
 
@@ -1402,7 +1429,7 @@ def cmd_connect(args) -> int:
                     target = lan
                     print(f"  on your LAN - going direct to {lan}, skipping the tunnel")
 
-    cmd = [moonlight, "stream", target, args.app]
+    cmd = native_launch_prefix() + [moonlight, "stream", target, args.app]
     cmd += COMMON_FLAGS
     cmd += profile["flags"]
     cmd += ["--resolution", args.resolution or profile["resolution"]]
