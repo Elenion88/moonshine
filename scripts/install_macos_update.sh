@@ -61,13 +61,13 @@ fi
 
 echo "=== copying updated files ==="
 mkdir -p "$SHARE/scripts"
-for file in ui.py window.py traycore.py moonshine.py brand.py; do
+for file in ui.py window.py traycore.py moonshine.py brand.py chrome.py; do
   if [ -f "$SOURCE/$file" ]; then
     cp "$SOURCE/$file" "$SHARE/$file"
     echo "  $file"
   fi
 done
-for file in make_icons.py build_macos_app.sh install_macos_update.sh; do
+for file in make_icons.py make_covers.py build_macos_app.sh install_macos_update.sh; do
   if [ -f "$SOURCE/scripts/$file" ]; then
     cp "$SOURCE/scripts/$file" "$SHARE/scripts/$file"
     echo "  scripts/$file"
@@ -91,6 +91,12 @@ fi
 echo
 echo "=== icons ==="
 "$SHARE/venv/bin/python" "$SHARE/scripts/make_icons.py" || true
+
+# Box art for Moonlight's tiles. Generated rather than copied, for the same
+# reason as the icons: one source of truth, drawn from the same glyph.
+echo
+echo "=== box art ==="
+"$SHARE/venv/bin/python" "$SHARE/scripts/make_covers.py" || true
 
 echo
 echo "=== rebuilding Moonshine.app ==="

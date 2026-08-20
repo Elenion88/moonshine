@@ -35,11 +35,13 @@ import socket
 import statistics
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
 import brand
+import chrome
 from brand import APP_ID
 
 # --------------------------------------------------------------------------
@@ -275,6 +277,11 @@ def hidden_hosts() -> set[str]:
     return set(load_config().get("hide", []))
 
 
+def asset_path(name: str) -> str:
+    """An icon or image that ships beside the code, by filename."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", name)
+
+
 def session_marker_path() -> str:
     return os.path.join(os.path.dirname(config_path()), "active-session")
 
@@ -331,6 +338,11 @@ def sessions_dir() -> str:
 # Moonlight announces where it writes its own log, on both platforms:
 #   Redirecting log output to /tmp/Moonlight-1786480353.log
 MOONLIGHT_LOG_RE = re.compile(r"Redirecting log output to (.+\.log)")
+
+# Moonlight logs plenty of transient noise - hosts going "offline", serverinfo
+# retries - while it is still going to succeed. This is the one line that means
+# it has given up, and it is what separates a slow start from a dead one.
+CONNECT_FAILED_RE = re.compile(r"Qt Critical: Failed to connect to (.+)")
 
 # Health signals Moonlight writes into its own log. Audio is listed first
 # because it is the fragile one: video carries 20% FEC and can conceal a loss,
@@ -840,6 +852,9 @@ def setup_macos() -> int:
                 ok = False
                 status_line("bad", f"{description}  - {paint('NOT granted', 'red')}")
 
+    if brand_sunshine():
+        restart_sunshine()
+
     if not missing:
         if grants is not None:
             print(paint("\n  All permissions granted. Nothing for you to click.",
@@ -857,6 +872,105 @@ def setup_macos() -> int:
     print(paint(f"      {binary}", "cyan"))
     print("\n  Then re-run setup to verify.")
     return 1
+
+
+SUNSHINE_CONFIG_DIRS = [
+    r"C:\Program Files\Sunshine\config",
+    os.path.expanduser("~/.config/sunshine"),
+]
+
+
+def sunshine_config_dir() -> str:
+    """Sunshine's config directory on this machine, or "" if it has none."""
+    for path in SUNSHINE_CONFIG_DIRS:
+        if os.path.isdir(path):
+            return path
+    return ""
+
+
+def brand_sunshine() -> bool:
+    """Put our box art and host name into Sunshine's config, and say if it changed.
+
+    Moonlight is Qt compiled into one executable and cannot be skinned, and
+    Sunshine's own art lives under Program Files where every update replaces it.
+    What is left is the config directory - apps.json, sunshine.conf, and the
+    covers folder Sunshine's own cover downloader writes into. That is user
+    data, it survives upgrades, and it is enough to own both the tiles and the
+    name Moonlight puts on this machine.
+    """
+    config = sunshine_config_dir()
+    if not config:
+        status_line("warn", "no Sunshine config directory - skipping branding")
+        return False
+
+    changed = False
+
+    covers = os.path.join(config, "covers")
+    os.makedirs(covers, exist_ok=True)
+    installed: dict[str, str] = {}
+    for app_name, (_, filename) in brand.COVERS.items():
+        source = asset_path(filename)
+        if not os.path.exists(source):
+            continue
+        target = os.path.join(covers, filename)
+        shutil.copyfile(source, target)
+        installed[app_name] = target
+
+    apps_path = os.path.join(config, "apps.json")
+    try:
+        with open(apps_path, encoding="utf-8") as fh:
+            apps = json.load(fh)
+    except (OSError, ValueError):
+        apps = None
+
+    if apps and isinstance(apps.get("apps"), list):
+        for app in apps["apps"]:
+            target = installed.get(app.get("name", ""))
+            if target and app.get("image-path") != target:
+                app["image-path"] = target
+                changed = True
+        if changed:
+            with open(apps_path, "w", encoding="utf-8") as fh:
+                json.dump(apps, fh, indent=2)
+                fh.write("\n")
+            status_line("ok", f"box art installed for {len(installed)} apps")
+    else:
+        status_line("warn", f"could not read {apps_path}")
+
+    # Sunshine falls back to the raw hostname, so the tower announces itself as
+    # `The_Tower`. An existing setting is left alone - that would be someone's
+    # deliberate choice, and this runs on every setup.
+    conf_path = os.path.join(config, "sunshine.conf")
+    try:
+        with open(conf_path, encoding="utf-8") as fh:
+            conf = fh.read()
+    except OSError:
+        conf = None
+
+    if conf is not None and not re.search(r"^\s*sunshine_name\s*=", conf, re.M):
+        display = brand.host_display_name(socket.gethostname())
+        with open(conf_path, "a", encoding="utf-8") as fh:
+            fh.write("\n# The name Moonlight shows for this machine.\n")
+            fh.write(f"sunshine_name = {display}\n")
+        status_line("ok", f"Moonlight will show this host as {display}")
+        changed = True
+
+    return changed
+
+
+def restart_sunshine() -> None:
+    """Reload Sunshine so config changes take effect - unless someone is on it."""
+    if host_session_active():
+        status_line("warn", "a client is connected - restart Sunshine later to "
+                            "pick up the new branding")
+        return
+    if sys.platform == "win32":
+        run(["powershell", "-NoProfile", "-Command",
+             "Restart-Service SunshineService -Force"], timeout=90)
+    else:
+        run(["launchctl", "kickstart", "-k",
+             f"gui/{os.getuid()}/homebrew.mxcl.sunshine"], timeout=60)
+    status_line("ok", "Sunshine restarted")
 
 
 def setup_windows() -> int:
@@ -891,6 +1005,9 @@ def setup_windows() -> int:
         print("      Scope it with (elevated):")
         print(paint("      Get-NetFirewallRule -DisplayName 'Sunshine' | "
                     "Set-NetFirewallRule -RemoteAddress 100.64.0.0/10", "cyan"))
+
+    if brand_sunshine():
+        restart_sunshine()
 
     print(paint("\n  Windows needs no capture permission - nothing else to grant.",
                 "dim"))
@@ -1121,6 +1238,41 @@ def cmd_bench(args) -> int:
     return 0
 
 
+def watch_for_failure(log_path: str, proc) -> list[str]:
+    """Tail our own log and stop Moonlight once it reports it cannot connect.
+
+    Left alone a refused connection is oddly quiet: Moonlight falls back to its
+    own host picker and sits there, so the session marker stays set, the window
+    apps keep believing a stream is live, and the only sign of trouble is a line
+    buried in a log. Watching for that line lets `connect` fail where it was
+    started, which is where someone is actually looking.
+
+    Returns a list that stays empty unless the session failed. It is filled in
+    from the watcher thread, so read it only once the process has exited.
+    """
+    reason: list[str] = []
+
+    def watch() -> None:
+        offset = 0
+        while proc.poll() is None:
+            try:
+                with open(log_path, encoding="utf-8", errors="replace") as fh:
+                    fh.seek(offset)
+                    chunk = fh.read()
+                    offset = fh.tell()
+            except OSError:
+                chunk = ""
+            match = CONNECT_FAILED_RE.search(chunk)
+            if match:
+                reason.append(match.group(1).strip())
+                proc.terminate()
+                return
+            time.sleep(0.5)
+
+    threading.Thread(target=watch, daemon=True).start()
+    return reason
+
+
 def cmd_connect(args) -> int:
     moonlight = find_binary("moonlight", MOONLIGHT_CANDIDATES)
     profile = PROFILES[args.profile]
@@ -1220,7 +1372,18 @@ def cmd_connect(args) -> int:
 
         mark_session(True)
         try:
-            proc = subprocess.run(cmd, stdout=fh, stderr=subprocess.STDOUT)
+            proc = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT)
+            # Moonlight cannot be skinned, so its window is renamed from out
+            # here instead. chrome.py explains why this runs for the whole
+            # session rather than once at startup.
+            chrome.brand(
+                proc.pid,
+                f"{brand.NAME} — {args.host}",
+                asset_path(f"{brand.APP_ID}.ico"),
+                lambda: proc.poll() is None,
+            )
+            failure = watch_for_failure(log_path, proc)
+            proc.wait()
         finally:
             mark_session(False)
 
@@ -1255,13 +1418,20 @@ def cmd_connect(args) -> int:
             fh.write(f"\n--- moonlight's own log ({match.group(1)}) ---\n")
             fh.write(detail)
 
-    print(paint(f"  session ended after {duration:.0f}s", "bold"))
+    if failure:
+        print()
+        status_line("bad", f"Moonlight could not reach {failure[0]}")
+        print("      Sunshine is not answering there - usually stopped, or")
+        print("      holding a phantom session from an earlier stream.")
+        print(paint(f"      moonshine check {args.host}", "cyan"))
+    else:
+        print(paint(f"  session ended after {duration:.0f}s", "bold"))
     if summary:
         print()
         for line in summary:
             print(line)
     print(paint(f"\n  log: {log_path}", "dim"))
-    return proc.returncode
+    return 1 if failure else proc.returncode
 
 
 # --------------------------------------------------------------------------

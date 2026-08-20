@@ -31,3 +31,23 @@ BUNDLE_ID = f"dev.austin.{APP_ID}"
 
 # The macOS bundle, and the executable inside it.
 APP_BUNDLE = f"{NAME}.app"
+
+# Box art for the apps Sunshine defines out of the box, keyed by the `name` in
+# apps.json. Sunshine's own covers live under Program Files and are replaced by
+# every update; these are installed into its config directory instead, which is
+# user data and survives. Value is (label drawn on the tile, file in assets/).
+COVERS = {
+    "Desktop": ("Desktop", "cover-desktop.png"),
+    "Steam Big Picture": ("Steam", "cover-steam.png"),
+}
+
+
+def host_display_name(hostname: str) -> str:
+    """What Moonlight should call this machine, given its hostname.
+
+    Sunshine defaults to the raw hostname, so the tower announces itself as
+    `The_Tower`. This keeps the machine identifiable - several hosts in one
+    list, and "Moonshine" alone would name the tool rather than the PC - while
+    marking it as one of ours.
+    """
+    return f"{hostname.replace('_', ' ').strip()} — {NAME}"
