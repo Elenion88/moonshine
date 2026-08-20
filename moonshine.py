@@ -203,9 +203,16 @@ def run(cmd: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
     kwargs: dict = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-    return subprocess.run(
-        cmd, capture_output=True, text=True, timeout=timeout, **kwargs
-    )
+    try:
+        return subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, **kwargs
+        )
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        # A missing tool is an ordinary answer here, not a crash. Over SSH the
+        # PATH is far shorter than the one a login shell or an app bundle gets,
+        # so `brew` and friends simply are not there - and every caller already
+        # reads returncode or stdout to decide what to do.
+        return subprocess.CompletedProcess(cmd, 127, "", str(exc))
 
 
 # --------------------------------------------------------------------------
@@ -738,7 +745,10 @@ SETTINGS_PANES = {
     "Accessibility": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
 }
 
-MACOS_SERVICE = "lizardbyte/homebrew/sunshine"
+# Sunshine runs from a LaunchAgent on macOS, not a brew service - the tap it
+# came from is untrusted by current Homebrew, so `brew services` cannot even
+# read the formula. This label is what launchctl answers to.
+MACOS_AGENT = "homebrew.mxcl.sunshine"
 
 
 def _sunshine_macos_bin() -> str | None:
@@ -822,9 +832,16 @@ def setup_macos() -> int:
     status_line("ok", "Sunshine installed")
     print(paint(f"       {binary}", "dim"))
 
-    print(paint("\n  Restarting the Sunshine service...", "dim"))
-    run(["brew", "services", "restart", MACOS_SERVICE], timeout=120)
-    import time
+    # Branded before the restart rather than after, so one restart picks up both
+    # the config change and the permissions check below - restarting Sunshine
+    # twice in one setup drops any client that happens to be connected twice.
+    brand_sunshine()
+
+    # Not `brew services`: Sunshine is a plain LaunchAgent here, and its tap is
+    # untrusted by current Homebrew, so brew refuses to read the formula at all.
+    # launchctl talks to the agent that actually exists.
+    print(paint("\n  Restarting Sunshine...", "dim"))
+    restart_sunshine()
     time.sleep(10)
 
     capture_ok, detail = _macos_log_verdict()
@@ -851,9 +868,6 @@ def setup_macos() -> int:
                 missing.append(service)
                 ok = False
                 status_line("bad", f"{description}  - {paint('NOT granted', 'red')}")
-
-    if brand_sunshine():
-        restart_sunshine()
 
     if not missing:
         if grants is not None:
@@ -969,7 +983,7 @@ def restart_sunshine() -> None:
              "Restart-Service SunshineService -Force"], timeout=90)
     else:
         run(["launchctl", "kickstart", "-k",
-             f"gui/{os.getuid()}/homebrew.mxcl.sunshine"], timeout=60)
+             f"gui/{os.getuid()}/{MACOS_AGENT}"], timeout=60)
     status_line("ok", "Sunshine restarted")
 
 
