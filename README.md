@@ -176,7 +176,25 @@ that can be automated:
 - starts or restarts the Sunshine service
 - reads Sunshine's log to confirm the hardware encoder actually initialised
 - checks the Windows firewall is still scoped to the tailnet
+- installs the box art and host name (see *Branding two programs we do not own*)
 - opens the exact macOS permission panes and prints the exact binary path
+- on macOS, checks Sunshine's libraries actually load - and why they might not
+
+That last one earns its place. On 2026-08-20 Sunshine on the Mac had been dead
+for days, and the only symptom was that the machine stopped answering on 47989 -
+indistinguishable from the Tailscale and firewall failures this project has
+already hit, so those got checked first. launchd knew all along and had filed it
+under `OS_REASON_DYLD`. Homebrew had deleted `curl` and `miniupnpc` out from
+under Sunshine, because Sunshine comes from the third-party tap
+`lizardbyte/homebrew`, Homebrew refuses to read formulae from untrusted taps, and
+a formula it cannot read has no visible dependencies - so `brew autoremove`
+concluded nothing needed them. `brew trust lizardbyte/homebrew` fixes the cause
+once. Setup now checks both, and one `sunshine --version` reproduces the symptom
+in a second:
+
+```
+  x  Libraries - cannot load libcurl.4.dylib - brew install curl
+```
 
 **What it deliberately does not do:** grant the macOS permissions. Screen
 Recording and Accessibility live behind TCC, which no process can grant to

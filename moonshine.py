@@ -802,6 +802,57 @@ def _tcc_grants(binary: str) -> dict[str, int] | None:
     return grants if readable else None
 
 
+# dyld names the first library it could not find, and Homebrew's layout puts the
+# formula name right there in the path: /opt/homebrew/opt/<formula>/lib/...
+DYLD_MISSING_RE = re.compile(r"Library not loaded:\s*(\S+)")
+HOMEBREW_FORMULA_RE = re.compile(r"/opt/homebrew/opt/([^/]+)/")
+
+
+def _sunshine_libraries_ok(binary: str) -> tuple[bool, str]:
+    """Check Sunshine can actually start, and name the formula if it cannot.
+
+    This exists because of 2026-08-20, when Sunshine had been silently dead for
+    days. Homebrew had pruned `curl` and `miniupnpc` out from under it, and the
+    only symptom was that the Mac stopped answering on 47989 - which looks
+    exactly like the Tailscale and firewall failures this project has hit
+    before, so that is what got checked first. launchd knew the truth all along
+    and filed it under `OS_REASON_DYLD`, where nobody was looking.
+
+    One `--version` reproduces it in a second, and dyld names the missing
+    library, so setup can print the command that fixes it.
+    """
+    proc = run([binary, "--version"], timeout=30)
+    match = DYLD_MISSING_RE.search(f"{proc.stdout}{proc.stderr}")
+    if not match:
+        return True, "libraries resolve"
+
+    library = match.group(1)
+    formula = HOMEBREW_FORMULA_RE.search(library)
+    remedy = (f"brew install {formula.group(1)}" if formula
+              else f"reinstall whatever provides {library}")
+    return False, f"cannot load {os.path.basename(library)} - {remedy}"
+
+
+def _tap_is_trusted() -> tuple[bool, str]:
+    """Check Homebrew will read Sunshine's formula, because autoremove depends on it.
+
+    Sunshine comes from the third-party tap `lizardbyte/homebrew`. Current
+    Homebrew refuses to read formulae from untrusted taps, and an unreadable
+    formula has no visible dependencies - so `brew autoremove` concludes that
+    nothing needs curl or miniupnpc and deletes them. That is the root cause of
+    the failure `_sunshine_libraries_ok` detects, and it fires on a schedule:
+    this Mac runs a weekly cache cleanup.
+    """
+    proc = run(["brew", "deps", "--installed", "sunshine"], timeout=60)
+    if proc.returncode == 127:
+        return True, ""  # no brew on PATH - not our business to report here
+    if "untrusted tap" in f"{proc.stdout}{proc.stderr}":
+        return False, ("Homebrew distrusts Sunshine's tap, so `brew autoremove` "
+                       "cannot see\n      its dependencies and will delete them. "
+                       "Fix it once with:")
+    return True, ""
+
+
 def _macos_log_verdict() -> tuple[bool, str]:
     """Read Sunshine's log to decide whether screen capture is actually working."""
     log = os.path.expanduser("~/.config/sunshine/sunshine.log")
@@ -831,6 +882,22 @@ def setup_macos() -> int:
         return 1
     status_line("ok", "Sunshine installed")
     print(paint(f"       {binary}", "dim"))
+
+    libraries_ok, detail = _sunshine_libraries_ok(binary)
+    if libraries_ok:
+        status_line("ok", f"Libraries - {detail}")
+    else:
+        ok = False
+        status_line("bad", f"Libraries - {detail}")
+        print(paint("      Sunshine cannot start at all until that is installed;"
+                    " it will look\n      like a network fault from every other "
+                    "machine.", "dim"))
+
+    trusted, advice = _tap_is_trusted()
+    if not trusted:
+        ok = False
+        status_line("warn", advice)
+        print(paint("      brew trust lizardbyte/homebrew", "cyan"))
 
     # Branded before the restart rather than after, so one restart picks up both
     # the config change and the permissions check below - restarting Sunshine
