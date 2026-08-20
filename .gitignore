@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# macOS build output
+scripts/build/
+*.icns.tmp
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local state (lives in %APPDATA%\moonshine / ~/.config/moonshine, but never commit a stray copy)
+sessions/
+*.log

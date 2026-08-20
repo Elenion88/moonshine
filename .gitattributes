@@ -1,0 +1,6 @@
+# Keep LF in the repo and in the working copy. The shell scripts and the Python
+# modules are deployed straight onto the Mac, where CRLF breaks the shebang line.
+* text=auto eol=lf
+*.ico binary
+*.png binary
+*.icns binary
