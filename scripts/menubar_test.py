@@ -1,6 +1,10 @@
 """
 Minimal menu bar probe - no rumps, no launchd, nothing of ours.
 
+Kept as the evidence behind removing the macOS menu bar agent. It is the only
+file in the project that needs PyObjC, it is never deployed, and running it
+again means installing pyobjc-core ad hoc.
+
 Creates one NSStatusItem with an unmistakable label and reports what the system
 says about it. Run this in a real GUI session (from Terminal) to separate two
 very different explanations for a missing icon:

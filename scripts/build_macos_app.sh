@@ -1,15 +1,14 @@
 #!/bin/bash
-# Build Moonshine.app - a real macOS bundle for the menu bar app.
+# Build Moonshine.app - a real macOS bundle for the window app.
 #
-# Running the menu bar app as a bare Python script under launchd is unreliable:
-# the process starts, logs nothing, and never registers a status item. A bundle
-# with LSUIElement gives macOS a proper accessory application to attach the
-# status item to, and gives TCC a stable identity to hang permissions on rather
-# than attributing them to whatever python binary happened to run.
+# A bundle is what makes this a real application rather than a script: it gets a
+# Dock icon, a Spotlight entry, and a stable identity for TCC to hang
+# permissions on, instead of attributing them to whatever python binary happened
+# to run.
 set -euo pipefail
 
 SHARE="$HOME/.local/share/moonshine"
-LABEL="dev.austin.moonshine-tray"
+LABEL="dev.austin.moonshine"
 
 # Prefer ~/Applications so the app shows up where apps are expected, but fall
 # back to our own directory if it is not writable. On this managed Mac an SSH
@@ -68,8 +67,7 @@ ${ICON_KEY}
     <key>NSHighResolutionCapable</key>
     <true/>
     <!-- Deliberately NOT LSUIElement. This bundle opens the window, so it should
-         own a Dock icon and be findable in Spotlight. The menu bar agent runs
-         separately from the LaunchAgent. -->
+         own a Dock icon and be findable in Spotlight. -->
 </dict>
 </plist>
 PLIST

@@ -96,12 +96,17 @@ echo
 echo "=== rebuilding Moonshine.app ==="
 bash "$SHARE/scripts/build_macos_app.sh"
 
+# The menu bar agent was removed on 2026-08-20: macOS silently refuses to draw
+# new status items on a full menu bar, so it never appeared on this Mac. Tear
+# down whichever label a machine is still carrying.
 echo
-echo "=== restarting the menu bar agent ==="
-LABEL="dev.austin.moonshine-tray"
-launchctl bootout "gui/$(id -u)/${LABEL}" 2>/dev/null || true
-sleep 1
-launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/${LABEL}.plist" 2>/dev/null || true
+echo "=== removing the menu bar agent ==="
+for label in dev.austin.moonshine-tray dev.austin.remote-tray; do
+  launchctl bootout "gui/$(id -u)/${label}" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/${label}.plist"
+done
+pkill -f tray_macos.py 2>/dev/null || true
+rm -f "$SHARE/tray_macos.py"
 
 echo
 echo "Done. Open Moonshine.app to see the new window."
