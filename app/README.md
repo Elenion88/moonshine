@@ -87,12 +87,15 @@ and its own nonce counter - two counters starting at zero under one key is
 exactly the nonce reuse that breaks GCM - and a repeated counter is rejected as
 a replay.
 
-**macOS needs one command first.** Windows and Linux treat every `127.x.x.x`
-address as local; macOS binds only `127.0.0.1`:
+**macOS needs a loopback alias, and the app adds it.** Windows and Linux treat
+every `127.x.x.x` address as local; macOS binds only `127.0.0.1`. The Set up
+screen checks whether the address can be bound and offers to add it, through
+`osascript` so the person sees the standard macOS authorisation dialog rather
+than a password box this app invented. It does not survive a reboot.
 
-```bash
-sudo ifconfig lo0 alias 127.0.0.2 up
-```
+If it has not been added, the tunnel falls back to `127.0.0.1` - which works
+whenever that Mac is not itself running Sunshine, because then there is nothing
+on those ports to collide with.
 
 ## Tests
 

@@ -18,7 +18,7 @@
 
 import type dgram from 'node:dgram'
 
-import { Tunnel } from './endpoint'
+import { Tunnel, usableLoopback } from './endpoint'
 import { deriveKeys, generateKeyPair, type KeyPair } from './wire'
 
 export interface TunnelHandle {
@@ -31,16 +31,26 @@ export interface TunnelHandle {
 /**
  * This machine's long-term key.
  *
- * Generated once per run rather than persisted, which is a deliberate limit:
- * a restart changes the key, so the far side must re-fetch it before a tunnel
- * will come up. Persisting it would let a stolen config file impersonate the
- * machine, and the peer list is refreshed every minute anyway.
+ * It has to survive a restart, and an earlier version generated it per run -
+ * which was quietly broken. The coordinator keeps whatever public key was last
+ * published, so a restart left every peer deriving a shared secret from a key
+ * this machine no longer held. The punch would succeed, the tunnel would start,
+ * and every frame would fail to authenticate: a failure that looks exactly like
+ * a network problem and is not one.
+ *
+ * Stored through the same keychain-backed encryption as the account token, so a
+ * config file on its own is not an identity.
  */
 let identity: KeyPair | null = null
 
 export function localKeyPair(): KeyPair {
   identity ??= generateKeyPair()
   return identity
+}
+
+/** Adopt a previously stored key, or keep the one just generated. */
+export function useKeyPair(pair: KeyPair): void {
+  identity = pair
 }
 
 const tunnels = new Map<string, TunnelHandle>()
@@ -62,9 +72,19 @@ export async function openTunnel(options: OpenOptions): Promise<TunnelHandle> {
   const existing = tunnels.get(options.peerDeviceId)
   if (existing) return existing
 
+  // Only the client end binds anything locally, so only it needs an address.
+  const loopback = options.role === 'client' ? await usableLoopback() : undefined
+  if (options.role === 'client' && !loopback) {
+    throw new Error(
+      'no loopback address is available for the tunnel - on macOS, add the alias ' +
+        'from the Set up screen'
+    )
+  }
+
   const tunnel = new Tunnel({
     socket: options.socket,
     peer: options.peer,
+    ...(loopback ? { loopback } : {}),
     // The client asked, so the client is the initiator. Getting this backwards
     // gives each side the other's key and nothing decrypts.
     keys: deriveKeys(localKeyPair().privateKey, options.peerPublicKey, options.role === 'client'),

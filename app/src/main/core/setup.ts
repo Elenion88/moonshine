@@ -34,6 +34,7 @@ import {
   tapTrusted
 } from './sunshine'
 import { TAILSCALE_CANDIDATES, tailscaleBinary } from './tailscale'
+import { LOOPBACK, MACOS_ALIAS_COMMAND, canBind } from './tunnel/endpoint'
 
 export type CheckState = 'ok' | 'warn' | 'bad' | 'info'
 
@@ -262,6 +263,32 @@ async function macosChecks(): Promise<Check[]> {
     detail: encoder.detail
   })
 
+  // The tunnel binds Sunshine's ports on a loopback address that is not
+  // 127.0.0.1, so that a Mac which is also running Sunshine does not have the
+  // tunnel colliding with it. Every 127.x.x.x address is already local on
+  // Windows and Linux; macOS binds only 127.0.0.1 unless told otherwise.
+  if (!(await canBind(LOOPBACK))) {
+    checks.push({
+      id: 'loopback',
+      label: 'Loopback alias',
+      state: 'warn',
+      detail: `${LOOPBACK} cannot be bound`,
+      action: { id: 'loopback:alias', label: 'Add it' },
+      note:
+        'Only needed to reach a machine through a punched tunnel, and only on ' +
+        'this Mac. Adding it asks for your password, because changing an ' +
+        'interface needs administrator rights. It does not survive a reboot; ' +
+        're-run this if it comes back.'
+    })
+  } else {
+    checks.push({
+      id: 'loopback',
+      label: 'Loopback alias',
+      state: 'ok',
+      detail: `${LOOPBACK} is available for tunnels`
+    })
+  }
+
   const grants = await tccGrants(binary)
   if (grants === null) {
     checks.push({
@@ -385,6 +412,26 @@ export async function runAction(id: string): Promise<ActionResult> {
         ok: true,
         message: `Box art installed for ${branding.covers} apps.${named} ${restart.detail}.`
       }
+    }
+
+    case 'loopback:alias': {
+      // osascript is what puts the standard macOS authorisation dialog in front
+      // of the person, rather than this app inventing a password prompt of its
+      // own - which is exactly the shape of a thing nobody should ever type a
+      // password into.
+      const script = `do shell script "${MACOS_ALIAS_COMMAND}" with administrator privileges`
+      const result = await run('osascript', ['-e', script], { timeoutMs: 120_000 })
+      if (result.code !== 0) {
+        return {
+          ok: false,
+          message: /User canceled/i.test(result.stderr)
+            ? 'Cancelled, so nothing was changed.'
+            : result.stderr.trim() || 'Could not add the alias.'
+        }
+      }
+      return (await canBind(LOOPBACK))
+        ? { ok: true, message: `${LOOPBACK} is available now. It will need adding again after a reboot.` }
+        : { ok: false, message: 'The command ran but the address still cannot be bound.' }
     }
 
     case 'tcc:open': {

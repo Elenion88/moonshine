@@ -24,6 +24,7 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createPrivateKey,
   createPublicKey,
   diffieHellman,
   generateKeyPairSync,
@@ -105,6 +106,25 @@ export function generateKeyPair(): KeyPair {
   // The DER wrapper is 12 bytes of prefix on a 32-byte key. Publishing the raw
   // key keeps what the coordinator stores small and format-independent.
   const raw = publicKey.export({ type: 'spki', format: 'der' }).subarray(12)
+  return { privateKey, publicKey: raw.toString('base64') }
+}
+
+/** PKCS8 DER, base64. The form that can be stored and read back. */
+export function exportPrivateKey(pair: KeyPair): string {
+  return pair.privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64')
+}
+
+export function importPrivateKey(base64: string): KeyPair {
+  const privateKey = createPrivateKey({
+    key: Buffer.from(base64, 'base64'),
+    format: 'der',
+    type: 'pkcs8'
+  })
+  // Derive the public half rather than storing it twice and risking a pair
+  // whose two halves disagree.
+  const raw = createPublicKey(privateKey)
+    .export({ type: 'spki', format: 'der' })
+    .subarray(12)
   return { privateKey, publicKey: raw.toString('base64') }
 }
 

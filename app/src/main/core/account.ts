@@ -30,8 +30,10 @@ import {
   closeAllTunnels,
   localKeyPair,
   openTunnel,
-  tunnelFor
+  tunnelFor,
+  useKeyPair
 } from './tunnel/manager'
+import { exportPrivateKey, importPrivateKey } from './tunnel/wire'
 import { SUNSHINE_PORT } from './tailscale'
 
 export interface Endpoint {
@@ -65,6 +67,9 @@ export interface AccountState {
 
 interface StoredAccount {
   serverUrl?: string
+  /** This machine's tunnel key, encrypted the same way the token is. */
+  deviceKey?: string
+  deviceKeyEncrypted?: boolean
   email?: string
   userId?: string
   deviceId?: string
@@ -124,6 +129,40 @@ function decrypt(account: StoredAccount): string | null {
     // token is unusable, which is the same as not being signed in.
     return null
   }
+}
+
+/**
+ * Load this machine's tunnel key, or make one and keep it.
+ *
+ * Called before anything publishes a public key, because publishing one and
+ * then holding a different one is the failure this exists to prevent.
+ */
+async function loadKeyPair(): Promise<void> {
+  const account = await stored()
+
+  if (account.deviceKey) {
+    try {
+      const raw = account.deviceKeyEncrypted
+        ? safeStorage.decryptString(Buffer.from(account.deviceKey, 'base64'))
+        : account.deviceKey
+      useKeyPair(importPrivateKey(raw))
+      return
+    } catch {
+      // Unreadable - a different machine, a reset keychain, a corrupt file. A
+      // fresh key is recoverable; a broken one is not.
+    }
+  }
+
+  const pair = localKeyPair()
+  const exported = exportPrivateKey(pair)
+  await store(
+    safeStorage.isEncryptionAvailable()
+      ? {
+          deviceKey: safeStorage.encryptString(exported).toString('base64'),
+          deviceKeyEncrypted: true
+        }
+      : { deviceKey: exported, deviceKeyEncrypted: false }
+  )
 }
 
 async function serverUrl(): Promise<string> {
@@ -210,6 +249,7 @@ async function authenticate(
       ...encrypt(String(result.body.token))
     })
     lastError = null
+    await loadKeyPair()
     await registerDevice()
     return { ok: true, message: path === '/v1/signup' ? 'Account created.' : 'Signed in.' }
   } catch (error) {
@@ -523,5 +563,12 @@ export async function testDirect(deviceId: string): Promise<PunchResult> {
 /** Called once at startup, so a signed-in machine starts checking in. */
 export async function resume(): Promise<void> {
   const account = await stored()
-  if (decrypt(account) && account.deviceId) startHeartbeat()
+  if (!decrypt(account) || !account.deviceId) return
+
+  await loadKeyPair()
+  // Re-publish on every start. The key is stable now, but the name and
+  // operating system are not guaranteed to be, and one call is cheaper than a
+  // class of bug where what the coordinator hands out is not what we hold.
+  await registerDevice()
+  startHeartbeat()
 }

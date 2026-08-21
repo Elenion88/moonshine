@@ -55,14 +55,51 @@ export const UDP_PORTS = [47998, 47999, 48000]
  * It has to be separate, because the machine running Moonlight may also be
  * running Sunshine - and Moonlight addresses a host by one address and fixed
  * port numbers, so binding 47989 on 127.0.0.1 would collide with the local
- * Sunshine and the tunnel would be talking to itself.
+ * Sunshine and the tunnel would end up talking to itself.
  *
  * On Windows and Linux every 127.x.x.x address is already local. macOS binds
- * only 127.0.0.1 by default and needs an alias added once:
- *
- *     sudo ifconfig lo0 alias 127.0.0.2 up
+ * only 127.0.0.1 unless an alias is added, which is why `usableLoopback()`
+ * below checks rather than assumes.
  */
 export const LOOPBACK = '127.0.0.2'
+
+/** The command that makes LOOPBACK usable on macOS. */
+export const MACOS_ALIAS_COMMAND = `ifconfig lo0 alias ${LOOPBACK} up`
+
+/** Can a socket actually bind this address? */
+export function canBind(address: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = net.createServer()
+    probe.once('error', () => resolve(false))
+    probe.listen(0, address, () => probe.close(() => resolve(true)))
+  })
+}
+
+/**
+ * The loopback address to hand the stream client, or null if there is not one.
+ *
+ * Prefers the separate address. Falls back to 127.0.0.1 when that is not
+ * available *and* nothing is already using Sunshine's ports there - which is
+ * the common case on a Mac that has never had the alias added and is a client
+ * rather than a host. Returning null is the honest answer when neither works,
+ * and is what the setup check exists to explain.
+ */
+export async function usableLoopback(): Promise<string | null> {
+  if (await canBind(LOOPBACK)) return LOOPBACK
+
+  const localSunshine = await new Promise<boolean>((resolve) => {
+    const probe = net.createConnection({ host: '127.0.0.1', port: 47989 })
+    probe.setTimeout(700)
+    const done = (inUse: boolean): void => {
+      probe.destroy()
+      resolve(inUse)
+    }
+    probe.once('connect', () => done(true))
+    probe.once('timeout', () => done(false))
+    probe.once('error', () => done(false))
+  })
+  return localSunshine ? null : '127.0.0.1'
+}
 
 const RETRANSMIT_MS = 300
 const MAX_RETRANSMIT_MS = 2_000
