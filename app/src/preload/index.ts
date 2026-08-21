@@ -34,7 +34,12 @@ const api = {
   },
 
   session: {
-    connect: (request: unknown) => ipcRenderer.invoke('session:connect', request)
+    connect: (request: unknown) => ipcRenderer.invoke('session:connect', request),
+    onFailed: (handler: (failure: unknown) => void) => {
+      const listener = (_event: unknown, failure: unknown): void => handler(failure)
+      ipcRenderer.on('session:failed', listener)
+      return () => ipcRenderer.removeListener('session:failed', listener)
+    }
   },
 
   account: {

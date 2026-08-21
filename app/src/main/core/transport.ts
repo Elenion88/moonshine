@@ -70,6 +70,8 @@ export type Method = 'icmp' | 'connect'
 
 export interface Route extends Candidate {
   method: Method
+  /** Sunshine answered on this address. Without it there is nothing to stream. */
+  streamable: boolean
   label: string
   report: PathReport | null
   health: Health
@@ -293,6 +295,7 @@ export async function measure(candidate: Candidate, count: number): Promise<Rout
     return {
       ...candidate,
       method: 'connect',
+      streamable: false,
       label,
       report: null,
       health: 'offline',
@@ -338,9 +341,21 @@ export async function measure(candidate: Candidate, count: number): Promise<Rout
         ? 'degraded'
         : 'ok'
 
+  // Reachable is not the same as streamable. A phone on the tailnet answers a
+  // ping perfectly well and hosts nothing - and offering it a Start button was
+  // how a Moonlight process ended up running against an Android device, failing,
+  // and sitting in its own host picker for hours.
+  //
+  // A connect-measured route already proved this by answering on Sunshine's
+  // port. A pinged one has to be asked separately.
+  const streamable = pingable
+    ? !report.unreachable && (await portOpen(candidate.address, SUNSHINE_PORT, 1500))
+    : !report.unreachable
+
   return {
     ...candidate,
     method,
+    streamable,
     label,
     report,
     health,

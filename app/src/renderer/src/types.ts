@@ -30,6 +30,7 @@ export interface HostStatus {
   name: string
   os: string
   online: boolean
+  streamable: boolean
   transport: TransportId
   transportLabel: string
   method: 'icmp' | 'connect'
@@ -69,6 +70,12 @@ export interface Profile {
   resolution: string
   displayMode: 'windowed' | 'fullscreen' | 'borderless'
   flags: string[]
+}
+
+export interface SessionFailure {
+  host: string
+  reason: string
+  logPath: string
 }
 
 export interface ConnectResult {
@@ -147,6 +154,7 @@ export interface MoonshineApi {
   }
   profiles: { all(): Promise<Profile[]> }
   session: {
+    onFailed(handler: (failure: SessionFailure) => void): () => void
     connect(request: {
       host: string
       address: string

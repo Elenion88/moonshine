@@ -9,13 +9,21 @@
  * of bitrate makes up for a path through another city.
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync
+} from 'node:fs'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { NAME } from './brand'
-import { findBinary, spawnDetached } from './exec'
+import { findBinary, spawnToLog } from './exec'
 import { sessionMarkerPath, sessionsDir, stateDir } from './paths'
 import { COMMON_FLAGS, PROFILES, type Profile } from './profiles'
 import {
@@ -61,6 +69,33 @@ const SESSION_MARKER_RE = /CLIENT (CONNECTED|DISCONNECTED)/g
  * long after the fact - no streaming session runs for twelve hours.
  */
 const MARKER_MAX_AGE_MS = 12 * 60 * 60 * 1000
+
+/**
+ * Moonlight logs plenty of transient noise while it is still going to succeed -
+ * hosts going "offline", serverinfo retries. This is the one line that means it
+ * has given up, and it is what separates a slow start from a dead one.
+ */
+const CONNECT_FAILED_RE = /Failed to connect to (.+)/
+
+/**
+ * How long to watch a new session before assuming it worked.
+ *
+ * Long enough for a slow host to wake up, short enough that a dead one does not
+ * sit there. Moonlight does not exit when a connection fails - it drops into
+ * its own host picker and waits, which is exactly how three of them ended up
+ * resident for hours holding 60-90 MB each.
+ */
+const WATCH_MS = 45_000
+const WATCH_INTERVAL_MS = 500
+
+/** Emits `failed` when a session dies on the way up. */
+export const sessions = new EventEmitter()
+
+export interface SessionFailure {
+  host: string
+  reason: string
+  logPath: string
+}
 
 export interface ConnectRequest {
   /** The name a person recognises, used for the log and the window title. */
@@ -190,6 +225,75 @@ function logName(host: string, profile: string): string {
 }
 
 /**
+ * Watch a new session's log and stop it if it reports it cannot connect.
+ *
+ * Left alone, a refused connection is oddly quiet. Moonlight does not exit; it
+ * falls back to its own host picker and sits there. The session marker stays
+ * set, the app keeps believing a stream is live and stops measuring, and the
+ * only sign of trouble is a line buried in a log file - so from the outside it
+ * looks like clicking the button did nothing at all.
+ *
+ * The log is tailed for the one line that means it gave up, and the process is
+ * stopped rather than left to accumulate.
+ */
+function watchForFailure(
+  logPath: string,
+  child: { kill: (signal?: NodeJS.Signals) => boolean },
+  host: string
+): void {
+  let offset = 0
+  try {
+    offset = statSync(logPath).size
+  } catch {
+    // The header write should have created it; if not, start from the top.
+  }
+
+  const started = Date.now()
+  const timer = setInterval(() => {
+    if (Date.now() - started > WATCH_MS) {
+      clearInterval(timer)
+      return
+    }
+
+    let chunk = ''
+    try {
+      const size = statSync(logPath).size
+      if (size > offset) {
+        const handle = openSync(logPath, 'r')
+        try {
+          const buffer = Buffer.alloc(size - offset)
+          readSync(handle, buffer, 0, buffer.length, offset)
+          chunk = buffer.toString('utf8')
+          offset = size
+        } finally {
+          closeSync(handle)
+        }
+      }
+    } catch {
+      clearInterval(timer)
+      return
+    }
+
+    const match = CONNECT_FAILED_RE.exec(chunk)
+    if (!match) return
+
+    clearInterval(timer)
+    try {
+      child.kill()
+    } catch {
+      // Already gone, which is the outcome we wanted anyway.
+    }
+    void markSession(false)
+    sessions.emit('failed', {
+      host,
+      reason: (match[1] ?? '').trim() || 'the stream client could not connect',
+      logPath
+    } satisfies SessionFailure)
+  }, WATCH_INTERVAL_MS)
+  timer.unref?.()
+}
+
+/**
  * Start a session, refusing a relayed path unless forced.
  *
  * Returns rather than throws when it refuses: a blocked session is an expected
@@ -260,14 +364,12 @@ export async function connect(request: ConnectRequest): Promise<ConnectResult> {
   ].join('\n')
   await writeFile(logPath, header, 'utf8')
 
-  const child = spawnDetached(moonlight, args)
+  const child = spawnToLog(moonlight, args, logPath)
   if (child.pid) await markSession(true, child.pid)
-  child.once('exit', () => {
-    void markSession(false)
-  })
-  child.once('error', () => {
-    void markSession(false)
-  })
+
+  child.once('exit', () => void markSession(false))
+  child.once('error', () => void markSession(false))
+  watchForFailure(logPath, child, request.host)
 
   return { started: true, pathSummary, target, logPath }
 }

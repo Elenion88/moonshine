@@ -11,6 +11,7 @@
 
 import { execFile, spawn } from 'node:child_process'
 import type { SpawnOptions } from 'node:child_process'
+import { closeSync, openSync } from 'node:fs'
 import { access, constants } from 'node:fs/promises'
 import { promisify } from 'node:util'
 
@@ -86,6 +87,35 @@ export function spawnDetached(
   child.unref()
   return child
 }
+
+/**
+ * Detached, but with its output going into a file we can read.
+ *
+ * Pipes would be simpler and are wrong here: the child outlives us by design,
+ * and a pipe whose reader has gone away kills the writer. A file descriptor
+ * survives the parent, so the stream keeps running and its log keeps filling
+ * whether or not this app is still watching.
+ */
+export function spawnToLog(
+  file: string,
+  args: string[],
+  logPath: string
+): ReturnType<typeof spawn> {
+  const fd = openSync(logPath, 'a')
+  try {
+    const child = spawn(file, args, {
+      detached: true,
+      windowsHide: true,
+      stdio: ['ignore', fd, fd]
+    })
+    child.unref()
+    return child
+  } finally {
+    // The child holds its own duplicate of the descriptor now.
+    closeSync(fd)
+  }
+}
+
 
 /**
  * The first of `candidates` that exists and is executable, else the bare name

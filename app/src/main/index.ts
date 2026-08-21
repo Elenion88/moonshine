@@ -17,7 +17,7 @@ import { resume, stopHeartbeat } from './core/account'
 import { NAME, SUBTITLE } from './core/brand'
 import { sessionsDir } from './core/paths'
 import { profilesFor } from './core/profiles'
-import { connect } from './core/session'
+import { connect, sessions, type SessionFailure } from './core/session'
 import { StatusCache, type StatusSnapshot } from './core/status'
 import { registerIpc } from './ipc'
 
@@ -188,6 +188,13 @@ if (!app.requestSingleInstanceLock()) {
 
     status.on('change', applySnapshot)
     status.start()
+
+    // A session that dies on the way up is stopped by the watcher; saying so is
+    // this side's job, because by then `connect` has long since returned.
+    sessions.on('failed', (failure: SessionFailure) => {
+      mainWindow?.webContents.send('session:failed', failure)
+      void status.refresh(false)
+    })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

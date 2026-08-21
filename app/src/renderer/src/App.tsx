@@ -71,7 +71,18 @@ export function App(): JSX.Element {
     void window.moonshine.info().then(setInfo)
     void window.moonshine.profiles.all().then(setProfiles)
     void window.moonshine.status.get().then(setSnapshot)
-    return window.moonshine.status.subscribe(setSnapshot)
+    const unsubscribeStatus = window.moonshine.status.subscribe(setSnapshot)
+    const unsubscribeFailure = window.moonshine.session.onFailed((failure) => {
+      setNotice({
+        kind: 'bad',
+        title: 'Session ended before it started.',
+        body: `${failure.host} did not accept the connection, so the stream client was closed rather than left running. ${failure.reason}`
+      })
+    })
+    return () => {
+      unsubscribeStatus()
+      unsubscribeFailure()
+    }
   }, [])
 
   useEffect(() => {

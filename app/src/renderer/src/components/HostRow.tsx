@@ -32,6 +32,10 @@ function detail(host: HostStatus): JSX.Element {
   // Listed as online by whatever found it, but nothing answered when we asked.
   // Saying "not measured yet" there is wrong twice: it was measured, and the
   // result is the interesting part.
+  //
+  // This has to come before the stream-host check: a machine we could not reach
+  // at all has not told us whether it hosts anything, and "not a stream host"
+  // would be a guess dressed up as a finding.
   if (host.median === null) {
     return host.measuredAt === null ? (
       <span>online · not measured yet</span>
@@ -39,6 +43,11 @@ function detail(host: HostStatus): JSX.Element {
       <span className="bad">listed as online, but nothing answered</span>
     )
   }
+
+  // Reachable, and hosting nothing - a phone, a server, a machine where
+  // Sunshine is not running. Worth saying plainly rather than offering a button
+  // that cannot work.
+  if (!host.streamable) return <span>online · not a stream host</span>
 
   // A connect time includes the server's accept latency, so it is an upper
   // bound on the round trip rather than a measurement of it. Say so with the
@@ -72,7 +81,7 @@ export function HostRow({
   onForget
 }: HostRowProps): JSX.Element {
   const [expanded, setExpanded] = useState(false)
-  const disabled = !host.online || busy !== null
+  const disabled = !host.online || !host.streamable || busy !== null
   const alternatives = host.routes.length > 1
 
   return (
@@ -101,19 +110,23 @@ export function HostRow({
               {host.routes.length} routes
             </button>
           )}
-          {profiles.map((profile, index) => (
-            <button
-              key={profile.id}
-              className={`btn${index === 0 ? ' primary' : ''}`}
-              disabled={disabled}
-              title={`${profile.description} — ${profile.resolution} @ ${profile.fps}fps, ${Math.round(
-                profile.bitrate / 1000
-              )} Mbps`}
-              onClick={() => onConnect(host, profile)}
-            >
-              {busy === `${host.name}:${profile.id}` ? 'Starting…' : profile.label}
-            </button>
-          ))}
+          {host.online && !host.streamable && (
+            <span className="host-note">no Sunshine here</span>
+          )}
+          {host.streamable &&
+            profiles.map((profile, index) => (
+              <button
+                key={profile.id}
+                className={`btn${index === 0 ? ' primary' : ''}`}
+                disabled={disabled}
+                title={`${profile.description} — ${profile.resolution} @ ${profile.fps}fps, ${Math.round(
+                  profile.bitrate / 1000
+                )} Mbps`}
+                onClick={() => onConnect(host, profile)}
+              >
+                {busy === `${host.name}:${profile.id}` ? 'Starting…' : profile.label}
+              </button>
+            ))}
         </div>
       </div>
 

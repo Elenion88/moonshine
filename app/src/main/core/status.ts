@@ -55,6 +55,8 @@ export interface HostStatus {
   name: string
   os: string
   online: boolean
+  /** Something answered on Sunshine's port. Nothing to stream without it. */
+  streamable: boolean
   /** The best route we found, flattened for the UI. */
   transport: TransportId
   transportLabel: string
@@ -102,6 +104,7 @@ function toStatus(routes: Route[]): HostStatus {
     // route knows. Tailscale does; the local network does not.
     os: ranked.find((route) => route.os)?.os ?? '',
     online: ranked.some((route) => route.online),
+    streamable: ranked.some((route) => route.streamable),
     transport: best.transport,
     transportLabel: best.label,
     method: best.method,
@@ -252,6 +255,7 @@ export class StatusCache extends EventEmitter {
                 group.map((candidate) => ({
                   ...candidate,
                   method: 'connect' as const,
+                  streamable: false,
                   label: '',
                   report: null,
                   health: 'offline' as Health,
