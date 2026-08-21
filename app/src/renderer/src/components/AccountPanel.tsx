@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState, type JSX } from 'react'
 
-import type { AccountState, PunchResult } from '../types'
+import type { AccountState, DirectResult } from '../types'
 
 interface AccountPanelProps {
   onClose: () => void
@@ -18,7 +18,7 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
-  const [results, setResults] = useState<Record<string, PunchResult>>({})
+  const [results, setResults] = useState<Record<string, DirectResult>>({})
 
   const load = useCallback(async () => {
     const next = await window.moonshine.account.state()
@@ -65,7 +65,7 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
   const testDirect = useCallback(async (deviceId: string) => {
     setTesting(deviceId)
     try {
-      const result = await window.moonshine.account.testDirect(deviceId)
+      const result = await window.moonshine.account.connectDirect(deviceId)
       setResults((current) => ({ ...current, [deviceId]: result }))
     } finally {
       setTesting(null)
@@ -127,8 +127,9 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
           {state.peers.length > 0 && (
             <>
               <p className="check-note" style={{ marginTop: 4 }}>
-                Your other machines. <strong>Test direct</strong> tries to punch a path
-                through both routers and reports whether it worked.
+                Your other machines. <strong>Connect</strong> punches a path through
+                both routers and brings up an encrypted tunnel over it, after which
+                that machine is streamable from here.
               </p>
               {state.peers.map((peer) => {
                 const result = results[peer.id]
@@ -149,13 +150,23 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
                       </div>
                       {result && (
                         <p className="check-note">
-                          {result.ok ? (
+                          {result.tunnelAddress ? (
                             <>
-                              Direct path established to{' '}
+                              Connected. Punched to{' '}
                               <strong>
                                 {result.peer?.address}:{result.peer?.port}
                               </strong>{' '}
-                              in {result.rttMs} ms.
+                              in {result.rttMs} ms, tunnel round trip{' '}
+                              <strong>{result.tunnelRttMs} ms</strong>. It is in the host
+                              list now, reachable at {result.tunnelAddress}.
+                            </>
+                          ) : result.ok ? (
+                            <>
+                              Punched a path to{' '}
+                              <strong>
+                                {result.peer?.address}:{result.peer?.port}
+                              </strong>
+                              , but the tunnel did not come up — {result.reason}
                             </>
                           ) : (
                             <>Could not get a direct path — {result.reason}</>
@@ -168,7 +179,7 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
                       disabled={testing !== null}
                       onClick={() => void testDirect(peer.id)}
                     >
-                      {testing === peer.id ? 'Punching…' : 'Test direct'}
+                      {testing === peer.id ? 'Connecting…' : 'Connect'}
                     </button>
                   </div>
                 )
@@ -183,15 +194,14 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
             <div className="check-body">
               <div className="check-line">
                 <span className="check-label">What this reaches</span>
-                <span className="check-detail">not the stream, yet</span>
+                <span className="check-detail">never the stream itself</span>
               </div>
               <p className="check-note">
-                The coordinator swaps addresses and never carries the stream, so there is
-                nothing to pay for and nothing to go down mid-session. Punching gets a
-                verified UDP path between two machines through their routers — but
-                Sunshine listens on its own ports, and carrying those over that path
-                needs a tunnel. That is the next piece. Until then this transport reaches
-                machines on one network and machines whose port is forwarded.
+                The coordinator introduces your machines to each other and then gets out
+                of the way — no stream traffic ever passes through it, so there is
+                nothing to pay for and nothing to go down mid-session. Once a tunnel is
+                up it is between the two machines directly, encrypted end to end, and
+                the coordinator could disappear without interrupting it.
               </p>
             </div>
           </div>

@@ -27,6 +27,7 @@
 import net from 'node:net'
 
 import { knownPeers } from './account'
+import { activeTunnels } from './tunnel/manager'
 import { NVSTREAM_SERVICE, browse } from './mdns'
 import { loadConfig, saveConfig } from './paths'
 import {
@@ -45,7 +46,7 @@ import {
   worst
 } from './tailscale'
 
-export type TransportId = 'tailscale' | 'lan' | 'manual' | 'account'
+export type TransportId = 'tailscale' | 'lan' | 'manual' | 'account' | 'tunnel'
 
 export interface Candidate {
   transport: TransportId
@@ -86,7 +87,8 @@ export const TRANSPORT_LABELS: Record<TransportId, string> = {
   tailscale: 'Tailscale',
   lan: 'Local network',
   manual: 'Saved address',
-  account: 'Your account'
+  account: 'Your account',
+  tunnel: 'Punched through'
 }
 
 /**
@@ -178,7 +180,23 @@ async function discoverLan(): Promise<Candidate[]> {
 function discoverAccount(): Candidate[] {
   const found: Candidate[] = []
 
+  // A peer with a tunnel up is reachable at a loopback address on this machine,
+  // and everything Sunshine listens on is already being carried there. Measuring
+  // it goes through the tunnel, so the number is the real one.
+  const tunnelled = new Map(activeTunnels().map((handle) => [handle.peerDeviceId, handle]))
+
   for (const peer of knownPeers()) {
+    const handle = tunnelled.get(peer.id)
+    if (handle) {
+      found.push({
+        transport: 'tunnel',
+        address: handle.address,
+        name: peer.name,
+        os: peer.os,
+        online: true
+      })
+    }
+
     const addresses = [
       ...peer.endpoints.filter((endpoint) => endpoint.kind === 'local').map((e) => e.address),
       ...(peer.observedIp ? [peer.observedIp] : [])

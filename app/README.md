@@ -65,13 +65,47 @@ Electron's `safeStorage` rather than sitting in a JSON file in the clear.
 `core/punch.ts` is the hole punching. One UDP socket, held open for as long as
 the app is signed in - it has to be one socket, because the router's mapping
 belongs to a source port, and opening a fresh one per attempt would throw away
-the hole already made. **Test direct** in the account panel reports whether a
-path was established and its round trip.
+the hole already made.
 
-What punching does not yet do is carry a stream. Sunshine listens on its own
-ports, and moving those over a punched path needs a tunnel. Until that exists
-the account transport reaches machines on one network and machines whose port is
-forwarded. `server/README.md` has the rest.
+`core/tunnel/` is what turns a punched path into a stream. Sunshine listens on
+six fixed ports, three of them TCP; the tunnel binds those on a loopback address
+of its own and carries everything across the single punched socket, so Moonlight
+can be pointed at `127.0.0.2` and never learn the difference.
+
+The two protocols are treated differently on purpose, and that difference is the
+design. The TCP ports carry pairing, app lists and RTSP setup - small,
+order-sensitive, fatal to lose - so they get sequencing, acknowledgement and
+retransmission. The UDP ports carry video, audio and input, where a
+retransmitted packet arrives too late to use and only delays the next one, so
+they are forwarded once and forgotten. Sunshine already sends video with its own
+error correction precisely because it assumes loss; adding reliability under it
+is the classic way to make a real-time stream worse.
+
+Everything is sealed with AES-256-GCM under a key derived from an X25519
+exchange the coordinator brokers and cannot read. Each direction has its own key
+and its own nonce counter - two counters starting at zero under one key is
+exactly the nonce reuse that breaks GCM - and a repeated counter is rejected as
+a replay.
+
+**macOS needs one command first.** Windows and Linux treat every `127.x.x.x`
+address as local; macOS binds only `127.0.0.1`:
+
+```bash
+sudo ifconfig lo0 alias 127.0.0.2 up
+```
+
+## Tests
+
+```bash
+npm test          # the tunnel against a stand-in for Sunshine
+npm run test:e2e  # the whole path, against a running coordinator
+```
+
+`test:e2e` needs `server/` running - it signs up, registers two devices with
+their public keys, punches, agrees roles, derives keys independently on each
+side and moves real TCP and UDP through the tunnel. Nothing is passed between
+the two devices in process; everything they know about each other came from the
+coordinator.
 
 `core/mdns.ts` is a small mDNS client written out rather than pulled in - the
 query is one packet and the reply is one well-specified format, and a package

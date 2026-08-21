@@ -25,10 +25,10 @@ single most important property here, and everything else follows from it:
 - It never holds video. The only things it knows are which machines belong to
   which account and what addresses they last reported.
 
-The cost of that is the thing it still cannot do. It now punches holes - see
-below - but carrying a *stream* over a punched path needs a tunnel, and that is
-not built. Two machines on one network reach each other; two behind separate
-routers can prove they have a path, and cannot yet use it.
+It brokers the key exchange too, and cannot read what it protects: devices
+publish X25519 public keys, this hands them out, and the shared secret is
+derived at each end. A coordinator that wanted to eavesdrop would have to hand
+out a key of its own and be caught by the first device that pinned one.
 
 ## API
 
@@ -41,7 +41,7 @@ All JSON. Everything except `/health`, `/v1/signup` and `/v1/login` needs
 | `POST /v1/signup` | `{email, password}` → `{token, userId, email}` |
 | `POST /v1/login` | `{email, password}` → `{token, userId, email}` |
 | `POST /v1/logout` | revoke the bearer token |
-| `POST /v1/devices` | `{id?, name, os}` → `{deviceId}` |
+| `POST /v1/devices` | `{id?, name, os, publicKey?}` → `{deviceId}` |
 | `GET /v1/devices` | every device on the account |
 | `DELETE /v1/devices/:id` | forget one |
 | `POST /v1/heartbeat` | `{deviceId, endpoints}` → `{observed, peers}` |
@@ -122,12 +122,14 @@ persistent volume for `MOONSHINE_DB`.
 
 ## Still to do
 
-- **The tunnel.** Punching produces a verified UDP path between two ephemeral
-  ports. Sunshine listens on its own TCP and UDP ports, and carrying those over
-  that path is the remaining work - and the point of everything above.
-- **Testing against real NATs.** The protocol is verified on loopback, which
-  proves the exchange and the synchronisation and traverses nothing. Two
-  machines on different networks are needed to prove the rest.
+- **Testing against real NATs.** Everything here is verified on loopback, which
+  proves the protocol, the roles and the key exchange, and traverses no NAT at
+  all. Two machines on different networks are needed to prove the rest - and
+  symmetric NAT on both ends will defeat this technique, which is what a relay
+  would otherwise be for.
+- **Key pinning.** Devices publish keys and this service hands them out. A
+  device that remembered a peer's key would notice if it ever changed; today
+  nothing does, so a dishonest coordinator could substitute its own.
 - **Email verification and password reset.** Neither exists. An address is
   currently just a username.
 - **Device authentication.** A device is identified by an id it chooses, under a

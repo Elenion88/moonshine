@@ -13,7 +13,7 @@
 
 export type Health = 'ok' | 'degraded' | 'relayed' | 'offline'
 
-export type TransportId = 'tailscale' | 'lan' | 'manual' | 'account'
+export type TransportId = 'tailscale' | 'lan' | 'manual' | 'account' | 'tunnel'
 
 export interface RouteSummary {
   transport: TransportId
@@ -123,6 +123,7 @@ export interface AccountPeer {
   online: boolean
   lastSeen: number
   observedIp: string | null
+  publicKey: string | null
   endpoints: Array<{ kind: string; address: string; port: number }>
 }
 
@@ -132,6 +133,11 @@ export interface PunchResult {
   rttMs: number | null
   reflexive: { address: string; port: number } | null
   reason: string | null
+}
+
+export interface DirectResult extends PunchResult {
+  tunnelAddress: string | null
+  tunnelRttMs: number | null
 }
 
 export interface AccountState {
@@ -192,6 +198,7 @@ export interface MoonshineApi {
     signIn(email: string, password: string): Promise<AuthResult>
     signOut(): Promise<StatusSnapshot>
     testDirect(deviceId: string): Promise<PunchResult>
+    connectDirect(deviceId: string): Promise<DirectResult>
   }
   setup: {
     checks(): Promise<SetupReport>

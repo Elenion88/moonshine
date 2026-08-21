@@ -51,6 +51,7 @@ every way it can and uses whichever answers best:
 | **Tailscale** | signed in on both machines |
 | **Local network** | being on the same network — nothing else at all |
 | **Your account** | signing in, so two machines can find each other |
+| **Punched through** | signing in — works through routers, encrypted end to end |
 | **Saved address** | knowing an address |
 
 A machine reachable several ways is listed once, with the routes behind a

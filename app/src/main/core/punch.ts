@@ -80,6 +80,40 @@ export class Puncher {
   private socket: dgram.Socket | null = null
   private reflexive: PunchCandidate | null = null
   private readonly handlers = new Set<(message: Message, from: dgram.RemoteInfo) => void>()
+  /** Datagrams that are not punch protocol - the tunnel's, once it exists. */
+  private foreign: ((datagram: Buffer, from: dgram.RemoteInfo) => void) | null = null
+
+  /**
+   * The socket itself, for the tunnel to send over.
+   *
+   * They have to share one: the mapping a router made belongs to this source
+   * port, so a tunnel with its own socket would be talking through a hole
+   * nobody opened.
+   */
+  get raw(): dgram.Socket | null {
+    return this.socket
+  }
+
+  /** Everything that is not punch protocol goes here. */
+  onForeign(handler: (datagram: Buffer, from: dgram.RemoteInfo) => void): void {
+    this.foreign = handler
+  }
+
+  /** Send a punch-protocol message to an arbitrary address. */
+  tell(message: Record<string, unknown>, to: PunchCandidate): void {
+    this.send(message, to)
+  }
+
+  /**
+   * Subscribe to punch-protocol messages for as long as the socket lives.
+   *
+   * Separate from `wait`, which removes itself after one match. This is for the
+   * messages that arrive unprompted - a peer asking us to be the host end of a
+   * tunnel, which by definition we were not waiting for.
+   */
+  onMessage(handler: (message: Message, from: dgram.RemoteInfo) => void): void {
+    this.handlers.add(handler)
+  }
 
   constructor(
     private readonly coordinator: PunchCandidate,
@@ -116,6 +150,13 @@ export class Puncher {
   async open(): Promise<PunchCandidate | null> {
     this.socket = dgram.createSocket({ type: 'udp4', reuseAddr: true })
     this.socket.on('message', (raw, from) => {
+      // Punch messages are JSON and always start with `{`. Anything else is
+      // the tunnel's, and must not be run through JSON.parse - a sealed frame
+      // is arbitrary bytes and parsing it would be luck either way.
+      if (raw.length > 0 && raw[0] !== 0x7b) {
+        this.foreign?.(raw, from)
+        return
+      }
       const message = parse(raw)
       if (!message) return
       for (const handler of [...this.handlers]) handler(message, from)

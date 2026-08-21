@@ -50,7 +50,9 @@ const api = {
     signIn: (email: string, password: string) =>
       ipcRenderer.invoke('account:signIn', email, password),
     signOut: () => ipcRenderer.invoke('account:signOut'),
-    testDirect: (deviceId: string) => ipcRenderer.invoke('account:testDirect', deviceId)
+    testDirect: (deviceId: string) => ipcRenderer.invoke('account:testDirect', deviceId),
+    connectDirect: (deviceId: string) =>
+      ipcRenderer.invoke('account:connectDirect', deviceId)
   },
 
   setup: {

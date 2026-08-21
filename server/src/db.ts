@@ -35,6 +35,7 @@ export interface Device {
   last_seen: number
   observed_ip: string | null
   endpoints: string
+  public_key: string | null
 }
 
 export interface Endpoint {
@@ -80,7 +81,8 @@ export function open(path: string): void {
       created_at  integer not null,
       last_seen   integer not null,
       observed_ip text,
-      endpoints   text not null default '[]'
+      endpoints   text not null default '[]',
+      public_key  text
     );
 
     create index if not exists devices_by_user on devices(user_id);
@@ -138,13 +140,34 @@ export function upsertDevice(device: {
   userId: string
   name: string
   os: string
+  publicKey: string | null
 }): void {
   const now = Date.now()
   db.prepare(
-    `insert into devices (id, user_id, name, os, created_at, last_seen)
-     values (?, ?, ?, ?, ?, ?)
-     on conflict(id) do update set name = excluded.name, os = excluded.os, last_seen = excluded.last_seen`
-  ).run(device.id, device.userId, device.name, device.os, now, now)
+    `insert into devices (id, user_id, name, os, created_at, last_seen, public_key)
+     values (?, ?, ?, ?, ?, ?, ?)
+     on conflict(id) do update set
+       name = excluded.name,
+       os = excluded.os,
+       last_seen = excluded.last_seen,
+       -- A device that omits its key keeps the one it had, so an older client
+       -- upgrading does not wipe what a newer one published.
+       public_key = coalesce(excluded.public_key, devices.public_key)`
+  ).run(device.id, device.userId, device.name, device.os, now, now, device.publicKey)
+}
+
+/**
+ * Add the column to a database created before keys existed.
+ *
+ * Four tables do not need a migration framework, but they do need this: a
+ * `create table if not exists` silently does nothing when the table is already
+ * there, so an existing install would never gain the column.
+ */
+export function migrate(): void {
+  const columns = db.prepare('pragma table_info(devices)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'public_key')) {
+    db.exec('alter table devices add column public_key text')
+  }
 }
 
 export function touchDevice(

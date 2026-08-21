@@ -25,7 +25,13 @@ import { randomUUID } from 'node:crypto'
 import { safeStorage } from 'electron'
 
 import { loadConfig, saveConfig } from './paths'
-import { Puncher, type PunchResult } from './punch'
+import { Puncher, type PunchCandidate, type PunchResult } from './punch'
+import {
+  closeAllTunnels,
+  localKeyPair,
+  openTunnel,
+  tunnelFor
+} from './tunnel/manager'
 import { SUNSHINE_PORT } from './tailscale'
 
 export interface Endpoint {
@@ -41,6 +47,7 @@ export interface AccountPeer {
   online: boolean
   lastSeen: number
   observedIp: string | null
+  publicKey: string | null
   endpoints: Endpoint[]
 }
 
@@ -86,6 +93,8 @@ let heartbeat: NodeJS.Timeout | null = null
  */
 let puncher: Puncher | null = null
 let punchKeepAlive: NodeJS.Timeout | null = null
+/** The ticket the current puncher is using, for messages we send by hand. */
+let currentTicket = ''
 
 async function stored(): Promise<StoredAccount> {
   const config = await loadConfig()
@@ -257,7 +266,15 @@ async function registerDevice(): Promise<void> {
   const result = await call('/v1/devices', {
     method: 'POST',
     token,
-    body: { id, name: hostname(), os: process.platform === 'win32' ? 'windows' : 'macos' }
+    body: {
+      id,
+      name: hostname(),
+      os: process.platform === 'win32' ? 'windows' : 'macos',
+      // Published so a peer can derive a shared key with us. The coordinator
+      // stores it and cannot use it - it brokers the exchange and cannot read
+      // what the exchange protects.
+      publicKey: localKeyPair().publicKey
+    }
   })
   if (result.status < 400) {
     await store({ deviceId: String(result.body.deviceId ?? id) })
@@ -368,12 +385,41 @@ async function startPunching(): Promise<void> {
       },
       String(ticketResponse.body.ticket)
     )
+    currentTicket = String(ticketResponse.body.ticket)
     if (!(await next.open())) {
       next.close()
       return
     }
     puncher = next
     punchKeepAlive = next.keepAlive()
+
+    // Two things arrive on this socket now: punch protocol, and tunnel frames.
+    next.onForeign((datagram) => {
+      for (const peer of peers) {
+        const handle = tunnelFor(peer.id)
+        if (handle) handle.tunnel.handleDatagram(datagram)
+      }
+    })
+
+    // The far side asking us to be the host. It runs Moonlight; we run
+    // Sunshine, and this side opens connections to 127.0.0.1 on its behalf.
+    next.onMessage((message, from) => {
+      void (async () => {
+        if (message.t !== 'tunnel-open') return
+        const peerId = String(message.from ?? '')
+        const peer = peers.find((candidate) => candidate.id === peerId)
+        if (!peer?.publicKey) return
+        const socket = next.raw
+        if (!socket) return
+        await openTunnel({
+          socket,
+          peer: { address: from.address, port: from.port },
+          peerDeviceId: peerId,
+          peerPublicKey: peer.publicKey,
+          role: 'host'
+        })
+      })()
+    })
   } catch {
     // No rendezvous available. Everything else still works; only the direct
     // test does not, and it reports that for itself.
@@ -383,8 +429,66 @@ async function startPunching(): Promise<void> {
 function stopPunching(): void {
   if (punchKeepAlive) clearInterval(punchKeepAlive)
   punchKeepAlive = null
+  currentTicket = ''
+  closeAllTunnels()
   puncher?.close()
   puncher = null
+}
+
+export interface DirectResult extends PunchResult {
+  /** The address to hand the stream client, once a tunnel is carrying it. */
+  tunnelAddress: string | null
+  /** Round trip measured through the tunnel itself. */
+  tunnelRttMs: number | null
+}
+
+/**
+ * Punch a path to a peer and bring a tunnel up over it.
+ *
+ * After this, that machine is reachable at a loopback address on this one, and
+ * everything Sunshine listens on is carried across the single punched socket.
+ * Moonlight is pointed at the loopback address and never learns the difference.
+ */
+export async function connectDirect(deviceId: string): Promise<DirectResult> {
+  const punched = await testDirect(deviceId)
+  const failed: DirectResult = { ...punched, tunnelAddress: null, tunnelRttMs: null }
+  if (!punched.ok || !punched.peer || !puncher?.raw) return failed
+
+  const peer = peers.find((candidate) => candidate.id === deviceId)
+  if (!peer?.publicKey) {
+    return {
+      ...failed,
+      reason: 'that machine has not published a key yet - it may be on an older version'
+    }
+  }
+
+  // Tell it to take the other role before we start sending frames it would not
+  // otherwise know what to do with.
+  const target: PunchCandidate = punched.peer
+  puncher.tell({ t: 'tunnel-open', ticket: currentTicket, from: (await stored()).deviceId }, target)
+
+  try {
+    const handle = await openTunnel({
+      socket: puncher.raw,
+      peer: target,
+      peerDeviceId: deviceId,
+      peerPublicKey: peer.publicKey,
+      role: 'client'
+    })
+    // A tunnel that binds but cannot reach the far side is worse than none: it
+    // would accept a connection from Moonlight and then hang. Prove it first.
+    const rtt = await handle.tunnel.ping(5_000)
+    if (rtt === null) {
+      handle.tunnel.stop()
+      return { ...failed, reason: 'the tunnel came up but the far side never answered' }
+    }
+    return { ...punched, tunnelAddress: handle.address, tunnelRttMs: rtt }
+  } catch (error) {
+    return {
+      ...failed,
+      reason: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 /**

@@ -42,6 +42,7 @@ import {
   deleteToken,
   devicesForUser,
   findUserByEmail,
+  migrate,
   open,
   touchDevice,
   upsertDevice,
@@ -254,17 +255,26 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       id?: unknown
       name?: unknown
       os?: unknown
+      publicKey?: unknown
     }
     const name = typeof body.name === 'string' ? body.name.trim().slice(0, 64) : ''
     if (!name) return send(response, 400, { error: 'a device name is required' })
     // The client keeps its own id so a reinstall on the same machine updates
     // the record rather than adding a second one.
     const id = typeof body.id === 'string' && body.id.length <= 64 ? body.id : newId()
+    // 32 bytes of X25519, base64. Stored as given and never used here - this
+    // service brokers the exchange and cannot read what it protects.
+    const publicKey =
+      typeof body.publicKey === 'string' && body.publicKey.length <= 64
+        ? body.publicKey
+        : null
+
     upsertDevice({
       id,
       userId,
       name,
-      os: typeof body.os === 'string' ? body.os.slice(0, 32) : ''
+      os: typeof body.os === 'string' ? body.os.slice(0, 32) : '',
+      publicKey
     })
     return send(response, 200, { deviceId: id })
   }
@@ -323,6 +333,7 @@ function listPeers(userId: string, excludeId: string | null): unknown[] {
       online: now - device.last_seen < ONLINE_WINDOW_MS,
       lastSeen: device.last_seen,
       observedIp: device.observed_ip,
+      publicKey: device.public_key,
       endpoints: JSON.parse(device.endpoints) as Endpoint[]
     }))
 }
@@ -340,6 +351,7 @@ function main(): void {
   }
 
   open(DB_PATH)
+  migrate()
 
   const server = createServer((request, response) => {
     handle(request, response).catch((error: unknown) => {

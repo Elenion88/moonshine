@@ -76,6 +76,13 @@ export function registerIpc(status: StatusCache): void {
   ipcMain.handle('account:testDirect', (_event, deviceId: string) =>
     account.testDirect(deviceId)
   )
+  ipcMain.handle('account:connectDirect', async (_event, deviceId: string) => {
+    const result = await account.connectDirect(deviceId)
+    // A tunnel that came up is a new route to that machine, so the host list is
+    // out of date the moment this returns.
+    if (result.tunnelAddress) void status.refresh(true)
+    return result
+  })
 
   ipcMain.handle('setup:checks', () => runChecks())
   ipcMain.handle('setup:action', async (_event, id: string) => {

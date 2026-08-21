@@ -11,7 +11,10 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "test": "npm run test:tunnel",
+    "test:tunnel": "npx esbuild src/main/core/tunnel/selftest.ts --bundle --platform=node --format=esm --outfile=out/test/selftest.mjs --log-level=warning && node out/test/selftest.mjs",
+    "test:e2e": "npx esbuild src/main/core/tunnel/e2e.ts --bundle --platform=node --format=esm --outfile=out/test/e2e.mjs --log-level=warning && node out/test/e2e.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
