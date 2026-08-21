@@ -1,0 +1,527 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+   Copyright (C) 2026 Austin
+
+   The palette is the one ui.py already defined, so the Electron app and the
+   app it replaces are recognisably the same product during the changeover.
+
+   Colours are declared as tokens on :root and only redefined under the dark
+   media query - never used directly inside it - so every element resolves in
+   both themes without being restyled twice. */
+
+:root {
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --surface-alt: #edf0f4;
+  --surface-hover: #e3e8ef;
+  --border: #dde2ea;
+  --text: #151920;
+  --muted: #606774;
+  --faint: #8b93a1;
+  --accent: #2f6bf0;
+  --accent-hover: #255cda;
+  --accent-text: #ffffff;
+  --ok: #0e9f62;
+  --degraded: #b87708;
+  --relayed: #da3633;
+  --offline: #8b93a1;
+  --shadow: 0 1px 2px rgba(21, 25, 32, 0.06), 0 8px 24px rgba(21, 25, 32, 0.05);
+  --radius: 10px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111317;
+    --surface: #191c21;
+    --surface-alt: #22262d;
+    --surface-hover: #2a2f37;
+    --border: #2b303a;
+    --text: #eceff4;
+    --muted: #949aa6;
+    --faint: #6b717c;
+    --accent: #4c7dff;
+    --accent-hover: #638eff;
+    --accent-text: #ffffff;
+    --ok: #3ed598;
+    --degraded: #f5b23d;
+    --relayed: #ff6b6b;
+    --offline: #7c838f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.3);
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  /* The system UI face on each platform. Shipping a webfont for chrome text
+     would make the app look less native, not more designed. */
+  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system,
+    BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* Chrome is not a document. Text selection here is almost always a misclick. */
+  user-select: none;
+  cursor: default;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ---- header ---- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+.header .mark {
+  width: 34px;
+  height: 34px;
+  flex: none;
+}
+
+.header-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.header-text h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.header-text p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+/* ---- buttons ---- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  transition: background 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-text);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+/* ---- banner ---- */
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 20px 0;
+  padding: 11px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--degraded);
+  font-size: 12.5px;
+  color: var(--muted);
+  user-select: text;
+}
+
+.banner.bad {
+  border-left-color: var(--relayed);
+}
+
+.banner.info {
+  border-left-color: var(--accent);
+}
+
+.banner strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.banner .close {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+/* ---- host list ---- */
+
+.hosts {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.host {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 15px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  box-shadow: var(--shadow);
+}
+
+.host.offline {
+  opacity: 0.62;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--offline);
+}
+
+.dot.ok {
+  background: var(--ok);
+}
+.dot.degraded {
+  background: var(--degraded);
+}
+.dot.relayed {
+  background: var(--relayed);
+}
+
+.host-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.host-name {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.host-detail {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.host-detail .warn {
+  color: var(--degraded);
+}
+.host-detail .bad {
+  color: var(--relayed);
+}
+
+.host-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 7px;
+  flex: none;
+}
+
+/* ---- empty + footer ---- */
+
+.empty {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 34ch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.empty strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.footer .spacer {
+  margin-left: auto;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+  * {
+    transition: none !important;
+  }
+}
+
+/* ---- setup ---- */
+
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.setup-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.setup-head h2 {
+  margin: 0 0 3px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.setup-head p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  max-width: 46ch;
+}
+
+.setup-head-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 7px;
+  flex: none;
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.check-glyph {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  margin-top: 1px;
+  color: var(--accent-text);
+  background: var(--offline);
+}
+
+.check-glyph.ok {
+  background: var(--ok);
+}
+.check-glyph.warn {
+  background: var(--degraded);
+}
+.check-glyph.bad {
+  background: var(--relayed);
+}
+.check-glyph.info {
+  background: var(--accent);
+}
+
+.check-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.check-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.check-label {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.check-detail {
+  font-size: 12.5px;
+  color: var(--muted);
+  word-break: break-word;
+  user-select: text;
+}
+
+.check-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--faint);
+  max-width: 62ch;
+}
+
+/* A command is here to be taken somewhere else, so the whole row copies. */
+.check-command {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+}
+
+.check-command:hover {
+  background: var(--surface-hover);
+}
+
+.check-command code {
+  font-family: "Cascadia Mono", Consolas, ui-monospace, "SF Mono", monospace;
+  font-size: 11.5px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.copy-hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  flex: none;
+}
+
+.check .btn {
+  margin-left: auto;
+  flex: none;
+}
+
+.setup-empty,
+.setup-ready {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.setup-ready {
+  color: var(--ok);
+}
