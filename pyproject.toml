@@ -13,30 +13,26 @@ license-files = ["LICENSE"]
 authors = [{ name = "Austin" }]
 keywords = ["remote-desktop", "sunshine", "moonlight", "tailscale", "streaming"]
 
-# Pillow draws every rounded element in the UI and generates the icons and box
-# art. It is optional at runtime - ui.py falls back to square Canvas rectangles
-# without it - but no shipped build should ever be missing it, so the packaged
-# install requires it.
-dependencies = ["pillow>=10.0"]
+# The CLI itself needs nothing but the standard library. Pillow is here for the
+# artwork generators in scripts/ - it draws the mark the icons and box art are
+# made from - and is not imported on any code path a user hits.
+dependencies = []
 
 [project.optional-dependencies]
-# The tray lives on Windows only. macOS refuses to draw new status items on a
-# notched display, so there is no menu bar app to install pystray for.
-tray = ["pystray>=0.19; sys_platform == 'win32'"]
+art = ["pillow>=10.0"]
 build = ["pyinstaller>=6.3"]
 
 [project.scripts]
 moonshine = "moonshine:main"
 
-[project.gui-scripts]
-# Windows only distinction: a gui-script gets pythonw.exe and no console.
-moonshine-app = "window:main"
+# No gui-script any more. The window and the tray are an Electron app now,
+# built from app/ - see app/README.md.
 
 [tool.setuptools]
 # A flat layout of single modules rather than a package, which is what the
-# apps already import by name. Adding a package directory would mean rewriting
-# every `import moonshine` in the tray, the window and the scripts.
-py-modules = ["moonshine", "brand", "chrome", "display", "traycore", "ui", "window"]
+# scripts already import by name. Adding a package directory would mean
+# rewriting every `import moonshine` in the CLI and the generators.
+py-modules = ["moonshine", "brand", "chrome", "display", "glyph"]
 
 # There is deliberately no package-data section. This is a flat layout of
 # single modules rather than a package, and setuptools can only attach data

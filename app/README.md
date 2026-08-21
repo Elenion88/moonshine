@@ -39,13 +39,10 @@ sides, not happen by accident through a shared import.
 
 ## What is not here yet
 
-- **The CLI.** `moonshine.py` still owns `list`, `check`, `bench`, `connect`,
-  `setup`, `display` and `logs`. This app duplicates the parts it needs. The
-  Python CLI remains the reference until it is ported or retired.
+- **The CLI.** `moonshine.py` still owns `bench`, `check` and `display`. The
+  app covers the rest. The tkinter window and the pystray tray it used to sit
+  beside were deleted on 2026-08-21.
 - **Hiding hosts.** The IPC call exists; nothing in the UI calls it.
-- **The installer.** `electron-builder` is configured here, but the Inno Setup
-  installer at the repository root still packages the Python app. Only one of
-  them should ship.
 
 ## Setup is a checklist now, not a console report
 
@@ -65,12 +62,11 @@ pane and names the exact binary; the click is not ours to make.
 
 ## The icons are generated
 
-`resources/tray/*.png`, `resources/icon.png` and `resources/covers/*.png` come from `ui.py`'s glyph via
-`python app/resources/generate-assets.py`, so the tray, the window, the app icon
-and Sunshine's box art cannot drift apart while both UIs exist. They are not
-committed.
+`resources/tray/*.png`, `resources/icon.png` and `resources/covers/*.png` come from `glyph.py` via
+`python app/resources/generate-assets.py`, so the tray icon, the app icon and
+Sunshine's box art all come from one drawing. They are not committed.
 
 `src/renderer/src/components/Mark.tsx` draws the same mark as SVG, from the
-same 512-unit measurements. When the Python UI is retired, the PNGs should be
-generated from that instead - Electron's tray needs raster, and the main
-process has no rasteriser.
+same 512-unit measurements. The two should eventually be one source, but
+Electron's tray needs raster and the main process has no rasteriser - so today
+`glyph.py` is what produces it.

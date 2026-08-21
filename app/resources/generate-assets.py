@@ -21,8 +21,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 import brand  # noqa: E402
-import traycore  # noqa: E402
-import ui  # noqa: E402
+import glyph  # noqa: E402
 
 OUT = os.path.join(ROOT, "app", "resources", "tray")
 
@@ -31,15 +30,15 @@ SIZES = [(16, ""), (32, "@2x"), (48, "@3x")]
 
 
 def main() -> int:
-    if not ui.HAVE_PIL:
+    if not glyph.HAVE_PIL:
         print("error: Pillow is required", file=sys.stderr)
         return 1
     os.makedirs(OUT, exist_ok=True)
-    for health, colour in traycore.HEALTH_HEX.items():
+    for health, colour in glyph.HEALTH_HEX.items():
         for size, suffix in SIZES:
-            ui.glyph_image(size, colour).save(os.path.join(OUT, f"{health}{suffix}.png"))
+            glyph.glyph_image(size, colour).save(os.path.join(OUT, f"{health}{suffix}.png"))
         print(f"wrote app/resources/tray/{health}*.png")
-    ui.glyph_image(512, ui.DARK["accent"]).save(
+    glyph.glyph_image(512, glyph.DARK["accent"]).save(
         os.path.join(ROOT, "app", "resources", "icon.png"))
     print("wrote app/resources/icon.png")
 

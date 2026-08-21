@@ -1,17 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Austin
 
-"""Copy the licence texts of everything bundled into the build output.
+"""Copy the licence texts of everything bundled into the CLI build output.
 
-The installers carry a Python interpreter, Tcl/Tk, Pillow and (on Windows)
-pystray inside them. Redistributing those means shipping their licences, and a
-notices file that links to a URL is not the same as shipping the text - URLs
-rot, and an offline installer cannot follow one.
+The CLI carries a Python interpreter inside it. Redistributing that means
+shipping its licence, and a notices file that links to a URL is not the same as
+shipping the text - URLs rot, and an offline installer cannot follow one.
+
+The app does not need this: electron-builder writes Electron's and Chromium's
+licences into its own output. This is only for `packaging/*.spec`.
 
 This pulls the real files out of the installed packages rather than keeping
 copies in the repo, so they track whatever version was actually built against.
 
-    python packaging/collect_licences.py dist/Moonshine
+    python packaging/collect_licences.py dist/moonshine
 
 Missing licences are reported and do not stop the build: a build that fails
 because Tcl moved its licence file is worse than one that tells you about it.
@@ -80,7 +82,9 @@ def main() -> int:
     os.makedirs(out, exist_ok=True)
 
     wanted: list[tuple[str, str]] = _python_licence() + _tk_licence()
-    for package in ("pillow", "pystray"):
+    # Pillow only appears if the build was made in an environment that has it;
+    # the CLI excludes it, so normally this finds nothing and that is correct.
+    for package in ("pillow",):
         wanted += _from_distribution(package)
 
     for name, source in wanted:
@@ -94,10 +98,6 @@ def main() -> int:
             shutil.copyfile(source, os.path.join(sys.argv[1], name))
             print(f"  {name}")
 
-    # pystray is LGPL-3.0 and gets frozen into the tray executable. That is fine
-    # under GPL-3.0 - LGPLv3 is upward-compatible with it, and the relinking
-    # requirement is met by the source being public - but its licence text
-    # still has to travel with the binary, which is what this copied.
 
     if not wanted:
         print("  warning: no licence files found", file=sys.stderr)

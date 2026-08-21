@@ -25,7 +25,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import brand  # noqa: E402
-import ui  # noqa: E402
+import glyph  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(ROOT, "assets")
@@ -39,11 +39,11 @@ def mark(size: int, margin: float = 0.0):
     from PIL import Image
 
     if not margin:
-        return ui.glyph_image(size, ui.DARK["accent"])
+        return glyph.glyph_image(size, glyph.DARK["accent"])
 
     inner = max(1, round(size * (1 - 2 * margin)))
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    canvas.alpha_composite(ui.glyph_image(inner, ui.DARK["accent"]),
+    canvas.alpha_composite(glyph.glyph_image(inner, glyph.DARK["accent"]),
                            ((size - inner) // 2, (size - inner) // 2))
     return canvas
 
@@ -80,7 +80,7 @@ def write_icns(path: str) -> bool:
 
 
 def main() -> int:
-    if not ui.HAVE_PIL:
+    if not glyph.HAVE_PIL:
         print("error: Pillow is required to generate icons", file=sys.stderr)
         return 1
 

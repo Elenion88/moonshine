@@ -1,125 +1,89 @@
 # Packaging
 
-Turning the source tree into something a stranger can download and run.
+Two artifacts, two toolchains.
 
 ```
-pyproject.toml          dependency and entry-point metadata (pip installs)
-packaging/windows.spec  PyInstaller: three executables in one folder
-packaging/macos.spec    PyInstaller: one .app holding the window app and the CLI
-packaging/moonshine.iss Inno Setup: dist\Moonshine -> a single setup.exe
-packaging/build.ps1     the whole Windows build, with checks
-packaging/build.sh      the whole macOS build, signing optional
+app/                    the product. electron-builder makes the installer.
+packaging/windows.spec  the CLI on Windows  (PyInstaller, optional)
+packaging/macos.spec    the CLI on macOS    (PyInstaller, optional)
+packaging/build.ps1     the whole Windows build
+packaging/build.sh      the whole macOS build
 ```
 
 ## Building
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # on Windows
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1        # the app
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -Cli   # and the CLI
 ```
 ```bash
-bash packaging/build.sh                                        # on the Mac
+bash packaging/build.sh          # the app
+bash packaging/build.sh --cli    # and the CLI
 ```
 
-PyInstaller cannot cross-compile: the Windows build has to run on Windows and
-the macOS build on the Mac. Both scripts generate the icons first, because
-`assets/*.ico` and `assets/*.icns` are produced by `scripts/make_icons.py`
-rather than committed.
+Neither toolchain cross-compiles: the Windows build runs on Windows, the macOS
+build on a Mac. Both scripts generate the icons and box art first, because
+those are drawn from `glyph.py` rather than committed.
 
-## Why three executables on Windows
+## The app is the product
 
-Windows fixes the subsystem at link time. A windowed binary has no console to
-write to and a console binary always shows one, so the CLI and the two GUI apps
-cannot be the same file. They share a folder, and PyInstaller ships the
-interpreter, Tcl/Tk and Pillow's DLLs once for all three - about 47 MB total.
+`app/dist/Moonshine-<version>-setup.exe` is what ships. Per-user, no
+administrator account, about 92 MB - most of which is Chromium.
 
-The names are deliberate and look backwards:
+The CLI is a separate, optional binary and is **not** in the installer. It
+exists for `moonshine bench`, `moonshine check` and `moonshine display`, which
+the app does not cover yet. When it does, this half goes away.
 
-| File | What it is |
-|---|---|
-| `moonshine.exe` | the CLI |
-| `Moonshine App.exe` | the window |
-| `Moonshine Tray.exe` | the tray icon |
+## What changed, and why the old installer is gone
 
-NTFS is case-insensitive, so `Moonshine.exe` and `moonshine.exe` are one
-filename - the first build of this shipped a `moonshine.exe` that was really
-the GUI, opened a window, and never answered `--help`. Only one binary can hold
-the plain name, and it has to be the CLI: `moonshine` is what a person types,
-and PATHEXT resolves `.exe` ahead of any `.cmd` shim, so a GUI holding that
-name would answer the command instead. The GUI filenames appear in Task Manager
-and nowhere else - the Start Menu shows whatever the shortcut is called.
+There used to be an Inno Setup script here that packaged three PyInstaller
+executables: a tkinter window, a pystray tray and the CLI. It worked - it
+installed, uninstalled cleanly and scoped its registry writes properly - and it
+packaged the app that has now been replaced.
 
-APFS is case-insensitive too, so the same split applies inside the `.app`.
+Two problems it had are worth remembering, because they were not obvious:
 
-## What a frozen build changes at runtime
-
-Three things in the source assume a checkout, and all three are handled in
-`moonshine.py`:
-
-- `bundle_dir()` - PyInstaller unpacks bundled data to a temporary directory
-  and points `sys._MEIPASS` at it, so `__file__` names a path inside the
-  archive that nothing can open. Every read of a shipped file goes through here.
-- `cli_command()` - the apps shell out to the CLI rather than importing it, so
-  a session started from a menu goes through the same path gate and writes the
-  same session log as one started by hand. Frozen, that is the sibling
-  executable; from source it is the interpreter plus `moonshine.py`.
-- `tray_windows.autostart_command()` - registers the executable at login rather
-  than `pythonw.exe` plus a script that is not installed.
+- **NTFS is case-insensitive.** `Moonshine.exe` and `moonshine.exe` are one
+  filename, so the GUI silently overwrote the CLI and the first build shipped a
+  `moonshine.exe` that opened a window and never answered `--help`.
+- **Uninstalling by name is not uninstalling your own thing.** Removing the
+  login registry entry by its name took out the entry belonging to a *separate*
+  install running from source. Deleting by name deletes by name; check what the
+  value points at first.
 
 ## Not done: code signing
 
-**Neither build is signed. That is the remaining blocker for selling downloads**
-- not for the project, which anyone can now build from source without meeting a
-warning at all.
+**Neither build is signed. That is the remaining blocker for selling
+downloads** - not for the project, which anyone can build from source without
+meeting a warning at all.
 
 - **Windows.** An unsigned installer downloaded from a website triggers
-  SmartScreen's "Windows protected your PC" panel, where running it means
-  clicking through *More info -> Run anyway*. Reputation is per-certificate and
-  accrues over installs, so a fresh certificate warns for a while regardless. A
-  standard OV code-signing certificate is roughly $200-400/year and now
-  requires the key on a hardware token or a cloud HSM; an EV certificate skips
-  the reputation wait and costs more. Sign both the three `.exe` files and the
-  installer, with `signtool sign /fd sha256 /tr <timestamp-url> /td sha256`.
-- **macOS.** Gatekeeper refuses to open an unsigned bundle downloaded from the
-  internet outright - not a warning, a refusal - because the quarantine
-  attribute makes it a notarisation check rather than a signature check. That
-  needs an Apple Developer account ($99/year), a *Developer ID Application*
-  certificate, and `notarytool` submission. `build.sh --sign` does all of it
-  and expects `DEVELOPER_ID` and `NOTARY_PROFILE` in the environment.
+  SmartScreen's "Windows protected your PC" panel. Reputation accrues per
+  certificate, so a fresh one warns for a while regardless. A standard OV
+  certificate is roughly $200-400/year and now requires the key on a hardware
+  token or cloud HSM. electron-builder signs automatically when `CSC_LINK` and
+  `CSC_KEY_PASSWORD` are in the environment.
+- **macOS.** Gatekeeper refuses an unsigned bundle downloaded from the internet
+  outright - the quarantine attribute makes it a notarisation check, not a
+  signature check. That needs an Apple Developer account ($99/year), a
+  *Developer ID Application* certificate, and notarisation. electron-builder
+  does all of it given `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
+  `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`.
 
-Until both exist, anyone who pays for this has to be talked past an OS warning
-that is telling them the truth: nobody has vouched for the binary.
+## Selling a GPL build
+
+Allowed, with one condition: conveying a binary means conveying its
+Corresponding Source. Because the repository is public, GPL-3.0 section 6(d) is
+satisfied by pointing at it - the download page and the installer both have to
+carry a link to the source for the exact version being sold, and it has to stay
+reachable for as long as the binary is offered.
+
+`app/package.json` sets that link. It is a placeholder today.
 
 ## Not done: everything the installer assumes is already there
 
 The installer ships Moonshine. It does not ship or install **Tailscale**,
 **Sunshine** or **Moonlight**, and it does not join a tailnet or pair a host.
-`moonshine setup` checks for them and prints what to run. For a paid download
-that is the wrong division of labour - the setup is most of the work - and it
-is the next thing to fix after signing.
-
-## The wheel is not the product
-
-`pyproject.toml` exists for dependency metadata and `pip install -e .` in a
-checkout. A built wheel carries the modules but not `assets/`, because
-setuptools can only attach data files to a package and this is a flat layout of
-single modules. Both asset callers degrade quietly - no Sunshine box art, no
-icon on Moonlight's window - so a plain `pip install .` produces something that
-runs and looks wrong. The PyInstaller builds bundle the assets explicitly and
-are what actually ships.
-
-## Licences travel with the build
-
-`collect_licences.py` copies the licence texts of everything bundled - CPython,
-Tcl/Tk, Pillow and pystray - out of the installed packages and into
-`licences/` in the build output, along with `LICENSE` and
-`THIRD-PARTY-NOTICES.md`. Both build scripts run it, so the shipped folder
-carries the texts rather than a link.
-
-Moonshine is GPL-3.0-or-later, and every bundled component is compatible with
-that - including pystray, whose LGPL-3.0 relinking requirement is satisfied by
-the source being public and this build being reproducible from it.
-
-**Selling a build has one condition:** conveying a binary means conveying its
-Corresponding Source. Point the download page and the installer at the public
-repository, at the tag the build came from, and keep it reachable for as long
-as the binary is offered. `THIRD-PARTY-NOTICES.md` has the detail.
+The app's Set up screen checks for them and says what is missing. For a paid
+download that is the wrong division of labour, and it is the next thing to fix
+after signing.

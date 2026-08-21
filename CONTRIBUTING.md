@@ -6,18 +6,21 @@ licence.
 ## Running it from a checkout
 
 ```bash
-pip install -e ".[tray]"
-python window.py            # the app
-python moonshine.py list    # the CLI
-python tray_windows.pyw     # the tray (Windows)
+cd app && npm install && npm run dev     # the app, with hot reload
+python moonshine.py list                 # the CLI
 ```
 
-Pillow is optional at runtime - `ui.py` falls back to square-cornered Canvas
-rectangles in the same palette without it - but you want it, because it draws
-every rounded element and generates the icons and box art.
+The CLI needs nothing but the standard library. Pillow is needed only to
+regenerate the icons and box art:
 
-The apps read source only at launch. Restart them after a change or you are
-testing the old build.
+```bash
+pip install -e ".[art]"
+python scripts/make_icons.py --png
+python app/resources/generate-assets.py
+```
+
+`npm run dev` reloads the renderer on save; changes under `src/main` need a
+restart. The CLI reads source at launch, so there is nothing to restart there.
 
 ## Building a release
 
@@ -30,13 +33,15 @@ on a Mac.
 A thin, well-behaved seam between Sunshine and Moonlight, plus the direct-path
 check that neither of them has. Two things follow from that:
 
-- **It does not fork Sunshine or Moonlight.** They stay on their own upstream
-  releases. Branding is applied at runtime and to config directories, never by
-  patching either program. `docs/DESIGN.md` explains how and what an update
-  wipes.
+- **It does not patch software your users install.** Sunshine and Moonlight
+  stay on their own upstream releases; branding is applied at runtime and to
+  config directories, never by modifying either program. Building our own
+  client from their GPL source is a different thing, and is on the roadmap -
+  what is ruled out is shipping a patch that alters somebody's install.
 - **Dependencies are load-bearing or they go.** Three macOS packages were
-  removed for rendering nothing. pystray was kept because it does real work.
-  A new dependency should be able to survive that question.
+  removed for rendering nothing, and pystray left with the tray it existed
+  for. A new dependency should be able to survive that question - which is
+  not an argument against Electron: it is the product now, not a helper.
 
 ## Style
 

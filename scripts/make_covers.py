@@ -23,7 +23,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import brand  # noqa: E402
-import ui  # noqa: E402
+import glyph  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(ROOT, "assets")
@@ -65,14 +65,14 @@ def cover(label: str):
     """One tile: the mark on a dark card, the app name under it."""
     from PIL import Image, ImageDraw
 
-    image = Image.new("RGB", (WIDTH, HEIGHT), ui.DARK["bg"])
+    image = Image.new("RGB", (WIDTH, HEIGHT), glyph.DARK["bg"])
     draw = ImageDraw.Draw(image)
 
     # A slow wash toward the accent, brightest at the top. Flat black reads as a
     # missing image in Moonlight's grid; this reads as a deliberate one.
-    top = ui.DARK["surface_alt"]
+    top = glyph.DARK["surface_alt"]
     r1, g1, b1 = int(top[1:3], 16), int(top[3:5], 16), int(top[5:7], 16)
-    r0, g0, b0 = (int(ui.DARK["bg"][i:i + 2], 16) for i in (1, 3, 5))
+    r0, g0, b0 = (int(glyph.DARK["bg"][i:i + 2], 16) for i in (1, 3, 5))
     for y in range(HEIGHT):
         blend = (1 - y / HEIGHT) ** 2
         draw.line([(0, y), (WIDTH, y)],
@@ -80,20 +80,20 @@ def cover(label: str):
                         round(g0 + (g1 - g0) * blend),
                         round(b0 + (b1 - b0) * blend)))
 
-    mark = ui.glyph_image(132, ui.DARK["accent"])
+    mark = glyph.glyph_image(132, glyph.DARK["accent"])
     image.paste(mark, ((WIDTH - 132) // 2, 96), mark)
 
-    _centre(draw, label, _font(34), 258, ui.DARK["text"])
-    _centre(draw, brand.NAME.upper(), _font(15), 316, ui.DARK["faint"])
+    _centre(draw, label, _font(34), 258, glyph.DARK["text"])
+    _centre(draw, brand.NAME.upper(), _font(15), 316, glyph.DARK["faint"])
 
     # A hairline the same colour as the window's cards, so a tile sitting in
     # Moonlight's grid belongs to the same family as the app that launched it.
-    draw.rectangle([0, 0, WIDTH - 1, HEIGHT - 1], outline=ui.DARK["border"])
+    draw.rectangle([0, 0, WIDTH - 1, HEIGHT - 1], outline=glyph.DARK["border"])
     return image
 
 
 def main() -> int:
-    if not ui.HAVE_PIL:
+    if not glyph.HAVE_PIL:
         print("error: Pillow is required to generate covers", file=sys.stderr)
         return 1
 
