@@ -23,12 +23,11 @@ import {
   describePath,
   isDirect,
   isIpLiteral,
-  lanEndpoint,
   measurePath,
-  peers,
   portOpen,
   relayName
 } from './tailscale'
+import type { TransportId } from './transport'
 import { mkdirSync } from 'node:fs'
 
 /**
@@ -55,22 +54,25 @@ const SUNSHINE_LOGS = [
 const SESSION_MARKER_RE = /CLIENT (CONNECTED|DISCONNECTED)/g
 
 /**
- * A marker older than this is stale rather than live.
+ * A backstop, not the test.
  *
- * The marker is removed in a finally block, so it normally outlives its session
- * by milliseconds - but a process killed outright never gets there, and a stale
- * marker would suppress status refreshes forever.
+ * Liveness is decided by whether the recorded process still exists, which is
+ * exact. This only guards against a pid being reused by something unrelated
+ * long after the fact - no streaming session runs for twelve hours.
  */
 const MARKER_MAX_AGE_MS = 12 * 60 * 60 * 1000
 
 export interface ConnectRequest {
+  /** The name a person recognises, used for the log and the window title. */
   host: string
+  /** What to hand the stream client. A tailnet name, or an address. */
+  address: string
+  transport: TransportId
   os: string
   app?: string
   profile: string
   overlay?: boolean
   force?: boolean
-  noLan?: boolean
 }
 
 export interface ConnectResult {
@@ -81,18 +83,43 @@ export interface ConnectResult {
   logPath?: string
 }
 
-export async function markSession(active: boolean): Promise<void> {
+/**
+ * Record that a session is running, and which process owns it.
+ *
+ * The pid is the part that matters. An earlier version wrote only a timestamp
+ * and trusted it for twelve hours, which meant one marker left behind by a
+ * process that died without cleaning up silently suppressed every status
+ * measurement until the next day - the app looked like it had stopped working,
+ * and the reason was invisible.
+ *
+ * A pid can be checked. If the process that owned the session is gone, so is
+ * the session, whatever the file says.
+ */
+export async function markSession(active: boolean, pid?: number): Promise<void> {
   const path = sessionMarkerPath()
   try {
     if (active) {
       mkdirSync(stateDir(), { recursive: true })
-      await writeFile(path, new Date().toISOString(), 'utf8')
+      const marker = { pid: pid ?? process.pid, startedAt: new Date().toISOString() }
+      await writeFile(path, `${JSON.stringify(marker)}\n`, 'utf8')
     } else {
       await unlink(path)
     }
   } catch {
     // Best effort. A missing marker means "no session", which is the safe
     // answer, and failing to write one must never stop a stream from starting.
+  }
+}
+
+/** True if `pid` names a process that still exists. */
+function processAlive(pid: number): boolean {
+  try {
+    // Signal 0 performs the permission and existence checks without delivering
+    // anything. It throws ESRCH when there is no such process.
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
   }
 }
 
@@ -126,11 +153,19 @@ export function hostSessionActive(): boolean {
  */
 export async function sessionActive(): Promise<boolean> {
   try {
-    const stamp = await readFile(sessionMarkerPath(), 'utf8')
-    const age = Date.now() - Date.parse(stamp)
-    if (Number.isFinite(age) && age >= 0 && age < MARKER_MAX_AGE_MS) return true
+    const raw = await readFile(sessionMarkerPath(), 'utf8')
+    const marker = JSON.parse(raw) as { pid?: number; startedAt?: string }
+    const age = Date.now() - Date.parse(marker.startedAt ?? '')
+    const fresh = Number.isFinite(age) && age >= 0 && age < MARKER_MAX_AGE_MS
+
+    if (fresh && typeof marker.pid === 'number' && processAlive(marker.pid)) return true
+
+    // The owner is gone, so the marker is a leftover. Clear it rather than
+    // re-deciding this on every refresh for the rest of the day.
+    await unlink(sessionMarkerPath()).catch(() => {})
   } catch {
-    // No marker. Fall through to the host-side check.
+    // No marker, or one written in a format this version does not understand.
+    // Either way the host-side check below is the better answer.
   }
   return hostSessionActive()
 }
@@ -165,28 +200,22 @@ export async function connect(request: ConnectRequest): Promise<ConnectResult> {
   if (!profile) return { started: false, reason: `unknown profile "${request.profile}"` }
 
   const app = request.app ?? 'Desktop'
-  let target = request.host
+  const target = request.address
   let pathSummary: string
 
-  if (isIpLiteral(request.host)) {
-    // A literal address bypasses Tailscale entirely - useful on your own LAN,
-    // and the fallback for when Tailscale itself is what is broken.
-    if (!(await portOpen(request.host, SUNSHINE_PORT, 2000))) {
-      return {
-        started: false,
-        reason: `Nothing is answering Sunshine on ${request.host}:${SUNSHINE_PORT}.`
-      }
-    }
-    pathSummary = 'direct by address, no Tailscale'
-  } else {
-    const report = await measurePath(request.host, 10)
+  // The gate only applies to a route that can be relayed, and only Tailscale
+  // can be. A direct address either answers or it does not - there is nothing
+  // in the middle to be routed around, so re-measuring it before every session
+  // would spend seconds to learn what one connect already said.
+  if (request.transport === 'tailscale' && !isIpLiteral(target)) {
+    const report = await measurePath(target, 10)
 
     if (report.unreachable) {
       return {
         started: false,
         reason:
           `${request.host} is unreachable over Tailscale. If Tailscale is down but ` +
-          'you are on the same network, connect by address instead.'
+          'you are on the same network, it may still be reachable directly.'
       }
     }
 
@@ -201,16 +230,14 @@ export async function connect(request: ConnectRequest): Promise<ConnectResult> {
           'Streaming over a relay will stutter regardless of encoder settings.'
       }
     }
-
-    // Prefer the LAN address when the host is on this network. Same machine,
-    // same session, just without the tunnel in the middle.
-    if (!request.noLan) {
-      const peer = (await peers()).find((candidate) => candidate.name === request.host)
-      if (peer) {
-        const lan = await lanEndpoint(peer)
-        if (lan) target = lan
+  } else {
+    if (!(await portOpen(target, SUNSHINE_PORT, 2000))) {
+      return {
+        started: false,
+        reason: `Nothing is answering Sunshine on ${target}:${SUNSHINE_PORT}.`
       }
     }
+    pathSummary = `direct to ${target}, no tunnel`
   }
 
   const moonlight = await findBinary('moonlight', MOONLIGHT_CANDIDATES)
@@ -219,7 +246,8 @@ export async function connect(request: ConnectRequest): Promise<ConnectResult> {
 
   const header = [
     `host      : ${request.host}`,
-    `target    : ${target}${target !== request.host ? '  (LAN-direct)' : ''}`,
+    `transport : ${request.transport}`,
+    `target    : ${target}`,
     `app       : ${app}`,
     `profile   : ${profile.id}`,
     `started   : ${new Date().toISOString()}`,
@@ -232,8 +260,8 @@ export async function connect(request: ConnectRequest): Promise<ConnectResult> {
   ].join('\n')
   await writeFile(logPath, header, 'utf8')
 
-  await markSession(true)
   const child = spawnDetached(moonlight, args)
+  if (child.pid) await markSession(true, child.pid)
   child.once('exit', () => {
     void markSession(false)
   })

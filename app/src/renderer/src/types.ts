@@ -13,19 +13,42 @@
 
 export type Health = 'ok' | 'degraded' | 'relayed' | 'offline'
 
+export type TransportId = 'tailscale' | 'lan' | 'manual'
+
+export interface RouteSummary {
+  transport: TransportId
+  method: 'icmp' | 'connect'
+  label: string
+  address: string
+  health: Health
+  median: number | null
+  direct: boolean
+  relay: string | null
+}
+
 export interface HostStatus {
   name: string
-  hostname: string
   os: string
-  ip: string
   online: boolean
+  transport: TransportId
+  transportLabel: string
+  method: 'icmp' | 'connect'
+  address: string
   health: Health
   median: number | null
   jitter: number | null
   worst: number | null
   direct: boolean
   relay: string | null
+  /** Every way we can reach this machine, best first. */
+  routes: RouteSummary[]
   measuredAt: number | null
+}
+
+export interface ManualHost {
+  name: string
+  address: string
+  os?: string
 }
 
 export interface StatusSnapshot {
@@ -104,11 +127,15 @@ export interface MoonshineApi {
   hosts: {
     profiles(os: string): Promise<Profile[]>
     hide(host: string, hidden: boolean): Promise<void>
+    addManual(host: ManualHost): Promise<StatusSnapshot>
+    removeManual(address: string): Promise<StatusSnapshot>
   }
   profiles: { all(): Promise<Profile[]> }
   session: {
     connect(request: {
       host: string
+      address: string
+      transport: TransportId
       os: string
       profile: string
       app?: string

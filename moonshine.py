@@ -341,31 +341,32 @@ def session_marker_path() -> str:
 
 
 def mark_session(active: bool) -> None:
-    """Record that this machine is running a session, for the tray apps.
+    """Record that this machine is running a session, for the app to read.
 
     Written by the process that owns the session, so it is exact - no guessing
     from process names, which was wrong twice: Moonlight lingers for hours after
-    a session ends, and the session itself runs over UDP so there is no
-    established TCP connection to look for either.
+    a session ends, so "is Moonlight running" reports true almost permanently.
+
+    The pid is written alongside the timestamp because a timestamp alone cannot
+    be checked. A process killed outright never reaches the cleanup, and a
+    marker trusted on age alone then suppressed every status measurement until
+    it aged out - the app looked broken for no visible reason. A pid can be
+    tested for existence, so a leftover marker is self-correcting.
     """
     path = session_marker_path()
     try:
         if active:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w") as fh:
-                fh.write(f"{os.getpid()}\n{time.time()}\n")
-        elif os.path.exists(path):
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"pid": os.getpid(),
+                           "startedAt": datetime.now().astimezone().isoformat()}, fh)
+                fh.write("\n")
+        else:
             os.remove(path)
     except OSError:
+        # Best effort. A missing marker means "no session", which is the safe
+        # answer, and failing to write one must never stop a stream starting.
         pass
-
-
-# Sunshine writes these on the host side either way round.
-SUNSHINE_LOGS = [
-    r"C:\Program Files\Sunshine\config\sunshine.log",
-    os.path.expanduser("~/.config/sunshine/sunshine.log"),
-]
-SESSION_MARKERS = re.compile(r"CLIENT (CONNECTED|DISCONNECTED)")
 
 
 def host_session_active() -> bool:

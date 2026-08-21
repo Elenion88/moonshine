@@ -16,6 +16,7 @@ import { recentSessions, sessionsDir, setHidden } from './core/paths'
 import { PROFILES, SHORTCUTS, profilesFor } from './core/profiles'
 import { runAction, runChecks } from './core/setup'
 import { connect, type ConnectRequest } from './core/session'
+import { addManualHost, removeManualHost, type ManualHost } from './core/transport'
 import type { StatusCache } from './core/status'
 
 export function registerIpc(status: StatusCache): void {
@@ -34,6 +35,15 @@ export function registerIpc(status: StatusCache): void {
   ipcMain.handle('hosts:hide', (_event, host: string, hidden: boolean) =>
     setHidden(host, hidden)
   )
+
+  ipcMain.handle('hosts:addManual', async (_event, host: ManualHost) => {
+    await addManualHost(host)
+    return status.refresh(true)
+  })
+  ipcMain.handle('hosts:removeManual', async (_event, address: string) => {
+    await removeManualHost(address)
+    return status.refresh(true)
+  })
 
   ipcMain.handle('profiles:all', () => Object.values(PROFILES))
 

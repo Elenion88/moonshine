@@ -109,11 +109,17 @@ function buildTrayMenu(snapshot: StatusSnapshot): Electron.Menu {
     ? hosts.map((host) => ({
         label: `${dot[host.health] ?? '○'}  ${host.name}${
           host.median === null ? '' : `   ${host.median.toFixed(0)} ms`
-        }`,
+        }   ${host.transportLabel}`,
         submenu: profilesFor(host.os).map((profile) => ({
           label: profile.label,
           click: () => {
-            void connect({ host: host.name, os: host.os, profile: profile.id })
+            void connect({
+              host: host.name,
+              address: host.address,
+              transport: host.transport,
+              os: host.os,
+              profile: profile.id
+            })
           }
         }))
       }))

@@ -6,14 +6,26 @@ import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
 import { HostRow } from './components/HostRow'
 import { Mark } from './components/Mark'
 import { SetupPanel } from './components/SetupPanel'
-import type { AppInfo, HostStatus, Profile, StatusSnapshot } from './types'
+import type {
+  AppInfo,
+  HostStatus,
+  Profile,
+  StatusSnapshot,
+  TransportId
+} from './types'
 
 interface Notice {
   kind: 'info' | 'warn' | 'bad'
   title: string
   body: string
   /** Set when a relayed path was refused, so the notice can offer to override. */
-  retry?: { host: string; os: string; profile: string }
+  retry?: {
+    host: string
+    address: string
+    transport: TransportId
+    os: string
+    profile: string
+  }
 }
 
 const EMPTY: StatusSnapshot = {
@@ -47,6 +59,9 @@ export function App(): JSX.Element {
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [showSetup, setShowSetup] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [manualName, setManualName] = useState('')
+  const [manualAddress, setManualAddress] = useState('')
   // Re-render the "measured Ns ago" line without re-measuring anything.
   const [, setTick] = useState(0)
 
@@ -70,6 +85,8 @@ export function App(): JSX.Element {
       try {
         const result = await window.moonshine.session.connect({
           host: host.name,
+          address: host.address,
+          transport: host.transport,
           os: host.os,
           profile: profile.id,
           force
@@ -81,7 +98,13 @@ export function App(): JSX.Element {
             body: result.reason ?? 'Unknown problem.',
             // Only offer the override for a refusal that forcing can fix.
             retry: result.reason?.includes('relayed')
-              ? { host: host.name, os: host.os, profile: profile.id }
+              ? {
+                  host: host.name,
+                  address: host.address,
+                  transport: host.transport,
+                  os: host.os,
+                  profile: profile.id
+                }
               : undefined
           })
         }
@@ -108,14 +131,19 @@ export function App(): JSX.Element {
     }
   }, [])
 
-  const sorted = useMemo(
-    () =>
-      [...snapshot.hosts].sort((a, b) => {
-        if (a.online !== b.online) return a.online ? -1 : 1
-        return a.name.localeCompare(b.name)
-      }),
-    [snapshot.hosts]
-  )
+  const addManual = useCallback(async () => {
+    const address = manualAddress.trim()
+    if (!address) return
+    setAdding(false)
+    setManualAddress('')
+    setManualName('')
+    await window.moonshine.hosts.addManual({
+      name: manualName.trim() || address,
+      address
+    })
+  }, [manualAddress, manualName])
+
+  const hosts = useMemo(() => snapshot.hosts, [snapshot.hosts])
 
   return (
     <div className="app">
@@ -135,6 +163,13 @@ export function App(): JSX.Element {
           </button>
           <button
             className="btn ghost"
+            onClick={() => setAdding((open) => !open)}
+            title="Reach a machine by address, without Tailscale"
+          >
+            Add host
+          </button>
+          <button
+            className="btn ghost"
             onClick={() => setShowSetup((open) => !open)}
             title="Check Sunshine, the firewall and capture permissions on this machine"
           >
@@ -149,6 +184,34 @@ export function App(): JSX.Element {
           </button>
         </div>
       </header>
+
+      {adding && (
+        <form
+          className="add-host"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void addManual()
+          }}
+        >
+          <input
+            autoFocus
+            placeholder="Address or hostname"
+            value={manualAddress}
+            onChange={(event) => setManualAddress(event.target.value)}
+          />
+          <input
+            placeholder="Name (optional)"
+            value={manualName}
+            onChange={(event) => setManualName(event.target.value)}
+          />
+          <button className="btn primary" type="submit" disabled={!manualAddress.trim()}>
+            Add
+          </button>
+          <button className="btn ghost" type="button" onClick={() => setAdding(false)}>
+            Cancel
+          </button>
+        </form>
+      )}
 
       {snapshot.sessionLive && (
         <div className="banner info">
@@ -196,22 +259,23 @@ export function App(): JSX.Element {
         </main>
       ) : (
       <main className="hosts">
-        {sorted.length === 0 ? (
+        {hosts.length === 0 ? (
           <div className="empty">
             <strong>No machines yet</strong>
             <span>
-              Nothing is showing up on your tailnet. Check Tailscale is signed in on both
-              machines, then refresh.
+              Nothing on your tailnet, nothing advertising itself on this network, and
+              no saved addresses. Any one of the three is enough.
             </span>
           </div>
         ) : (
-          sorted.map((host) => (
+          hosts.map((host) => (
             <HostRow
               key={host.name}
               host={host}
               profiles={profilesFor(profiles, host.os)}
               busy={busy}
               onConnect={(target, profile) => void start(target, profile)}
+              onForget={(address) => void window.moonshine.hosts.removeManual(address)}
             />
           ))
         )}

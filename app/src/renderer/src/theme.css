@@ -525,3 +525,111 @@ a:focus-visible {
 .setup-ready {
   color: var(--ok);
 }
+
+/* ---- transports ---- */
+
+.host {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.host-main {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+/* Which way we got there. Quiet by default - it only matters when it is
+   surprising, and then the colour of the dot has already got your attention. */
+.via {
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+  vertical-align: 1px;
+}
+
+.routes {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.route {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.route-label {
+  color: var(--text);
+  font-weight: 500;
+  min-width: 96px;
+}
+
+.route-address {
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, ui-monospace, "SF Mono", monospace;
+  font-size: 11px;
+  user-select: text;
+}
+
+.route-timing {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.route .btn {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.routes-note {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--faint);
+  max-width: 60ch;
+}
+
+/* ---- add a host by address ---- */
+
+.add-host {
+  display: flex;
+  gap: 8px;
+  margin: 12px 20px 0;
+  padding: 11px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.add-host input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 10px;
+  user-select: text;
+}
+
+.add-host input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.add-host input::placeholder {
+  color: var(--faint);
+}

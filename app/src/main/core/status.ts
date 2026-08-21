@@ -2,21 +2,21 @@
 // Copyright (C) 2026 Austin
 
 /**
- * The status cache: what every host's path looks like, kept fresh in the
- * background so opening the window is instant.
+ * The status cache: every machine we can reach, by every way we can reach it,
+ * kept fresh in the background so opening the window is instant.
  *
  * The important behaviour here is the pausing, and it was bought expensively.
- * Measuring a path means pinging every online host for a few seconds each -
- * about nine seconds of continuous probing per refresh. With a tray and a
- * window on each of two machines, four independent timers staggered against
- * each other put that on top of a live stream every thirty seconds or so.
+ * Measuring means probing every online host for a few seconds each - about nine
+ * seconds of continuous traffic per refresh. With a tray and a window on each of
+ * two machines, four independent timers staggered against each other put that on
+ * top of a live stream every thirty seconds or so.
  *
  * The symptom was picture and audio alternating clean and rough in 11-26 second
- * stretches, in both directions. It was not the network, the WiFi, the codec or
+ * stretches, in both directions. It was not the network, the wifi, the codec or
  * the audio tap. It was this software measuring the link it was streaming over.
  *
  * So refreshing pauses while a session is live. An explicit refresh still
- * measures, on the principle that a button the user pressed should do the thing
+ * measures, on the principle that a button someone pressed should do the thing
  * they pressed it for.
  */
 
@@ -24,17 +24,15 @@ import { EventEmitter } from 'node:events'
 
 import { hiddenHosts } from './paths'
 import { sessionActive } from './session'
+import type { Health } from './tailscale'
 import {
-  type Health,
-  type PathReport,
-  type Peer,
-  health,
-  jitter,
-  measurePath,
-  median,
-  peers,
-  worst
-} from './tailscale'
+  type Candidate,
+  type Route,
+  type TransportId,
+  discoverAll,
+  measure,
+  rank
+} from './transport'
 
 /** Quiet-time refresh interval. */
 const REFRESH_MS = 60_000
@@ -42,18 +40,34 @@ const REFRESH_MS = 60_000
 /** Poll interval while a session is live - short, so status catches up quickly. */
 const SESSION_POLL_MS = 15_000
 
+export interface RouteSummary {
+  transport: TransportId
+  method: 'icmp' | 'connect'
+  label: string
+  address: string
+  health: Health
+  median: number | null
+  direct: boolean
+  relay: string | null
+}
+
 export interface HostStatus {
   name: string
-  hostname: string
   os: string
-  ip: string
   online: boolean
+  /** The best route we found, flattened for the UI. */
+  transport: TransportId
+  transportLabel: string
+  method: 'icmp' | 'connect'
+  address: string
   health: Health
   median: number | null
   jitter: number | null
   worst: number | null
   direct: boolean
   relay: string | null
+  /** Every way we can reach this machine, best first. */
+  routes: RouteSummary[]
   measuredAt: number | null
 }
 
@@ -66,29 +80,46 @@ export interface StatusSnapshot {
   error: string | null
 }
 
-function toStatus(peer: Peer, report: PathReport | null): HostStatus {
-  const relayed = report
-    ? (report.samples.findLast(([route]) => route.startsWith('DERP'))?.[0] ?? null)
-    : null
+function summarise(route: Route): RouteSummary {
   return {
-    name: peer.name,
-    hostname: peer.hostname,
-    os: peer.os,
-    ip: peer.ip,
-    online: peer.online,
-    health: health(report, peer.online),
-    median: report ? median(report) : null,
-    jitter: report ? jitter(report) : null,
-    worst: report ? worst(report) : null,
-    direct: report !== null && !report.unreachable && relayed === null,
-    relay: relayed,
-    measuredAt: report ? Date.now() : null
+    transport: route.transport,
+    method: route.method,
+    label: route.label,
+    address: route.address,
+    health: route.health,
+    median: route.median,
+    direct: route.direct,
+    relay: route.relay
+  }
+}
+
+function toStatus(routes: Route[]): HostStatus {
+  const ranked = rank(routes)
+  const best = ranked[0] as Route
+  return {
+    name: best.name,
+    // mDNS does not report an operating system, so take it from whichever
+    // route knows. Tailscale does; the local network does not.
+    os: ranked.find((route) => route.os)?.os ?? '',
+    online: ranked.some((route) => route.online),
+    transport: best.transport,
+    transportLabel: best.label,
+    method: best.method,
+    address: best.address,
+    health: best.health,
+    median: best.median,
+    jitter: best.jitter,
+    worst: best.worst,
+    direct: best.direct,
+    relay: best.relay,
+    routes: ranked.map(summarise),
+    measuredAt: Date.now()
   }
 }
 
 /**
- * Worst-first, because the icon carries one colour and a problem anywhere is
- * the thing worth knowing about.
+ * Worst-first, because the tray icon carries one colour and a problem anywhere
+ * is the thing worth knowing about.
  */
 function overallHealth(hosts: HostStatus[]): Health {
   const usable = hosts.filter((host) => host.online)
@@ -97,6 +128,29 @@ function overallHealth(hosts: HostStatus[]): Health {
   if (usable.some((host) => host.health === 'degraded')) return 'degraded'
   if (usable.some((host) => host.health === 'ok')) return 'ok'
   return 'offline'
+}
+
+/**
+ * One machine can answer on several transports, and they are the same machine.
+ *
+ * Matching has to be loose, because the transports do not agree on spelling.
+ * Tailscale reports the node name `macbook-air`; mDNS reports whatever Sunshine
+ * was configured to announce, which is a name written for people - `MacBook
+ * Air`. Comparing them literally listed one laptop twice, once with a route and
+ * once without.
+ *
+ * So: lowercase, drop a trailing `.local`, and remove everything that is not a
+ * letter or a digit. Both spellings collapse to `macbookair`.
+ *
+ * It is not airtight - two genuinely different machines named alike would merge
+ * - but that failure is visible, as a host whose routes disagree wildly, rather
+ * than silent. The alternative is asking people to reconcile duplicates by hand.
+ */
+function identity(candidate: Candidate): string {
+  return candidate.name
+    .toLowerCase()
+    .replace(/\.local$/, '')
+    .replace(/[^a-z0-9]/g, '')
 }
 
 export class StatusCache extends EventEmitter {
@@ -152,15 +206,45 @@ export class StatusCache extends EventEmitter {
     try {
       const live = await sessionActive()
 
-      // Peer listing is cheap - it reads local state and sends no packets - so
-      // the host list stays current even mid-session. Only the pinging stops.
+      // Discovery is cheap - local state and one multicast packet - so the host
+      // list stays current mid-session. Only the measuring stops.
       const hidden = await hiddenHosts()
-      const visible = (await peers()).filter((peer) => !hidden.has(peer.name))
+      const candidates = (await discoverAll()).filter(
+        (candidate) => !hidden.has(candidate.name)
+      )
+
+      const grouped = new Map<string, Candidate[]>()
+      for (const candidate of candidates) {
+        const key = identity(candidate)
+        grouped.set(key, [...(grouped.get(key) ?? []), candidate])
+      }
 
       if (live && !manual) {
-        const hosts = visible.map((peer) => {
-          const previous = this.snapshot.hosts.find((host) => host.name === peer.name)
-          return previous ? { ...previous, online: peer.online } : toStatus(peer, null)
+        const hosts = [...grouped.values()].map((group) => {
+          const key = identity(group[0] as Candidate)
+          const previous = this.snapshot.hosts.find(
+            (host) =>
+              host.name.toLowerCase().replace(/[^a-z0-9]/g, '') === key
+          )
+          return (
+            previous ?? {
+              ...toStatus(
+                group.map((candidate) => ({
+                  ...candidate,
+                  method: 'connect' as const,
+                  label: '',
+                  report: null,
+                  health: 'offline' as Health,
+                  median: null,
+                  jitter: null,
+                  worst: null,
+                  direct: false,
+                  relay: null
+                }))
+              ),
+              measuredAt: null
+            }
+          )
         })
         this.emitSnapshot({
           hosts,
@@ -172,13 +256,16 @@ export class StatusCache extends EventEmitter {
         return this.snapshot
       }
 
-      const online = visible.filter((peer) => peer.online)
-      const reports = await Promise.all(
-        online.map(async (peer) => [peer.name, await measurePath(peer.name, 6)] as const)
+      const hosts = await Promise.all(
+        [...grouped.values()].map(async (group) =>
+          toStatus(await Promise.all(group.map((candidate) => measure(candidate, 6))))
+        )
       )
-      const byName = new Map(reports)
+      hosts.sort((a, b) => {
+        if (a.online !== b.online) return a.online ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
 
-      const hosts = visible.map((peer) => toStatus(peer, byName.get(peer.name) ?? null))
       this.emitSnapshot({
         hosts,
         overall: overallHealth(hosts),

@@ -24,7 +24,9 @@ const api = {
 
   hosts: {
     profiles: (os: string) => ipcRenderer.invoke('hosts:profiles', os),
-    hide: (host: string, hidden: boolean) => ipcRenderer.invoke('hosts:hide', host, hidden)
+    hide: (host: string, hidden: boolean) => ipcRenderer.invoke('hosts:hide', host, hidden),
+    addManual: (host: unknown) => ipcRenderer.invoke('hosts:addManual', host),
+    removeManual: (address: string) => ipcRenderer.invoke('hosts:removeManual', address)
   },
 
   profiles: {
