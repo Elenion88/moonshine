@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """
 Windows display modes - listing them, and changing the host's refresh rate.
 

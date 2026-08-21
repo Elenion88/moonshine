@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """
 remote - Windows system tray app.
 
@@ -46,6 +49,14 @@ def make_icon(health: str) -> Image.Image:
 # --------------------------------------------------------------------------
 
 def autostart_command() -> str:
+    """What to write into the Run key so this tray starts at login.
+
+    Frozen, that is this executable. From source it is `pythonw.exe` and this
+    script - the console interpreter would leave a black window on the desktop
+    for as long as the tray runs.
+    """
+    if moonshine.FROZEN:
+        return f'"{sys.executable}"'
     pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
     if not os.path.exists(pythonw):
         pythonw = sys.executable

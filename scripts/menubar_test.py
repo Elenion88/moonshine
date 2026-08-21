@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """
 Minimal menu bar probe - no rumps, no launchd, nothing of ours.
 

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """
 Generate the box art Moonlight shows for each app on a Sunshine host.
 

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """
 Every user-visible name in one place.
 
@@ -20,13 +23,25 @@ NAME = "Moonshine"
 # registry value. Lowercase and safe for a path on either platform.
 APP_ID = "moonshine"
 
+# The shipped version. Read by the installers, the macOS bundle and anything
+# that has to answer "which build is this" from a machine we cannot log into.
+VERSION = "0.1.0"
+
 # One line under the heading, and the CLI description.
 TAGLINE = "Moonlight and Sunshine, tuned for your tailnet."
 
 # Short form, where the full tagline does not fit.
 SUBTITLE = "Low-latency desktop over your tailnet"
 
-# Reverse-DNS identifier for the macOS bundle.
+# Reverse-DNS identifier. The macOS bundle identifier, the launch agent label
+# and the Windows AppUserModelID all come from here.
+#
+# `dev.austin` is a placeholder: reverse-DNS is supposed to be a domain you
+# control, and this one is not registered. Change it before publishing - but
+# know that changing it is not free. macOS keys TCC grants to the bundle
+# identifier, so a build with a new one is a new app to the system: Screen
+# Recording and Accessibility both have to be granted again, by hand, on every
+# Mac that already had them. Do it once, before anyone else installs this.
 BUNDLE_ID = f"dev.austin.{APP_ID}"
 
 # The macOS bundle, and the executable inside it.

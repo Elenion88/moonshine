@@ -1,9 +1,12 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 # Apply a UI update, then rebuild Moonshine.app. Run it on the Mac.
 #
-# The normal route is SSH from the tower - `ssh ayoung@macbook-air`, note the
-# username, it is not the Windows one. This script exists for when that is not
-# available and the files arrive by Taildrop instead:
+# The normal route is SSH from the host - `ssh <mac-user>@<mac-host>`; the macOS
+# account name is usually not the Windows one. This script exists for when that
+# is not available and the files arrive by Taildrop instead:
 #
 #   mkdir -p /tmp/moonshine-update        # tar -C will not create it
 #   tar xzf ~/Downloads/moonshine-ui-update.tar.gz -C /tmp/moonshine-update

@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 # Put Moonshine.app where Spotlight will index it, and confirm the window app is
 # in place.
 set -uo pipefail

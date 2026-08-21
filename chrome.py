@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """Put Moonshine's name and icon on Moonlight's window.
 
 Moonlight is Qt Quick compiled into `Moonlight.exe` - there is no theme file, no

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """
 Shared look and feel for the remote apps.
 
@@ -27,7 +30,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 
 try:
-    from PIL import Image, ImageDraw, ImageTk
+    from PIL import Image, ImageChops, ImageDraw, ImageTk
 
     HAVE_PIL = True
 except ImportError:  # pragma: no cover - depends on the machine
@@ -122,8 +125,14 @@ def enable_hidpi() -> None:
             pass
 
 
-def claim_taskbar_identity(app_id: str = "dev.austin.remote") -> None:
+def claim_taskbar_identity(app_id: str) -> None:
     """Give the app its own taskbar button, with its own icon.
+
+    Takes the id rather than defaulting to one. The default used to be a
+    literal, and it was still the pre-rename `dev.austin.remote` months
+    after everything else had been renamed - Windows does not validate an
+    AppUserModelID, so a stale one is invisible until you notice the window
+    grouping with something else. `brand.BUNDLE_ID` is the only copy now.
 
     Without an explicit AppUserModelID, Windows files the window under
     pythonw.exe: it shares a taskbar button with every other Python GUI and
@@ -386,62 +395,87 @@ def _dot_photo(size: int, colour: str, bg: str, halo: bool = True):
 
 
 def glyph_image(size: int, colour: str, accent_screen: str = "#FFFFFF"):
-    """The app mark: a screen with a crescent moon, on a status-coloured tile.
+    """The app mark: a moon throwing a beam onto a screen, on a status tile.
 
     The moon is the name - Moonlight plus Sunshine - and the screen is what the
     thing actually does. The tile stays the status colour because that is the
     part doing real work: health is readable in the tray without opening
     anything, and no amount of glyph is worth losing it.
 
-    Two shapes at 16 pixels is the whole difficulty. The moon is bitten from
-    the lower left rather than the upper right, which is the non-obvious half:
-    an upper-right bite leaves the moon's mass in the lower left, exactly where
-    the screen is, and the two fuse into one blob at tray size. Biting the far
-    side throws the mass up and away and keeps a clean gap between them.
+    Everything below is measured in a 512-unit grid and scaled to the requested
+    size, so the mark is one drawing rather than a set of per-size tweaks.
+
+    The light is a cone in perspective: the screen is its near face, and its
+    edges run back to a single apex at (356, 159) - 62 units inside the moon's
+    white and clear of the bite - which is what makes the beam read as coming
+    from behind the moon rather than beside it. The cone never reaches the
+    lower-left corner; that corner staying solid tile is what keeps it a cone
+    rather than a wash.
+
+    The moon is bitten from the lower left rather than the upper right. An
+    upper-right bite leaves the moon's mass in the lower left, exactly where
+    the screen is, and the two fuse into one blob at tray size; biting the far
+    side throws the mass up and away. It is also drawn *past* the rounded
+    corner on purpose - overflowing the tile is what makes it read as bigger
+    than the frame rather than arranged inside it - so it is composited after
+    the tile mask rather than through it.
+
+    Below 32 pixels the 42% cone greys into the tile and the ray is a third of
+    a pixel wide, so both are drawn harder. The geometry is identical; only the
+    contrast changes.
     """
     if not HAVE_PIL:
         return None
     n = size * _SS
+    u = n / 512.0                       # one unit of the drawing grid, in pixels
+    white = _rgb(accent_screen)
+
+    def at(x: float, y: float) -> tuple[float, float]:
+        return (x * u, y * u)
+
+    # The tile: a gentle vertical gradient of the status colour, rounded off.
     top = mix(colour, "#FFFFFF", 0.18)
     bottom = mix(colour, "#000000", 0.14)
-
-    tile = Image.new("RGB", (n, n))
-    draw = ImageDraw.Draw(tile)
+    ground = Image.new("RGB", (n, n))
+    gd = ImageDraw.Draw(ground)
     for y in range(n):
-        draw.line([(0, y), (n, y)], fill=mix(top, bottom, y / max(1, n - 1)))
+        gd.line([(0, y), (n, y)], fill=mix(top, bottom, y / max(1, n - 1)))
 
-    mask = Image.new("L", (n, n), 0)
-    ImageDraw.Draw(mask).rounded_rectangle(
-        [0, 0, n - 1, n - 1], radius=int(n * 0.26), fill=255)
+    tile_mask = Image.new("L", (n, n), 0)
+    ImageDraw.Draw(tile_mask).rounded_rectangle(
+        [at(24, 24), at(488, 488)], radius=112 * u, fill=255)
+    tile = ground.convert("RGBA")
+    tile.putalpha(tile_mask)
 
-    # Screen and a detached base bar, shifted down and left of centre to clear
-    # the moon. A connecting neck fuses with the screen at this size, so the
-    # gap plus a wide bar is what still reads as a monitor.
-    screen = ImageDraw.Draw(tile)
-    sw, sh = n * 0.46, n * 0.30
-    x0, y0 = n * 0.09, n * 0.40
-    screen.rounded_rectangle([x0, y0, x0 + sw, y0 + sh],
-                             radius=max(1, int(n * 0.055)), fill=accent_screen)
-    bw, bh = n * 0.28, n * 0.075
-    bx, by = x0 + (sw - bw) / 2, y0 + sh + n * 0.06
-    screen.rounded_rectangle([bx, by, bx + bw, by + bh],
-                             radius=int(bh / 2), fill=accent_screen)
+    # Beam and ray. Both run off the left edge of the tile, so they are drawn
+    # on their own layer and clipped by the tile mask before compositing.
+    if size >= 32:
+        cone_a, ray_a, ray_top, ray_bottom = 0.42, 0.80, 153, 166
+    else:
+        cone_a, ray_a, ray_top, ray_bottom = 0.56, 0.96, 149, 170
 
-    # The crescent, composited through its own mask so the bite restores the
-    # tile gradient underneath rather than a flat colour that would band.
+    beam = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    bd = ImageDraw.Draw(beam)
+    bd.polygon([at(356, 159), at(74, 269), at(74, 408), at(270, 408)],
+               fill=white + (round(255 * cone_a),))
+    bd.polygon([at(-20, ray_top), at(356, 159), at(-20, ray_bottom)],
+               fill=white + (round(255 * ray_a),))
+    beam.putalpha(ImageChops.multiply(beam.getchannel("A"), tile_mask))
+    tile.alpha_composite(beam)
+
+    # The screen: the near face of the cone, solid over the band.
+    ImageDraw.Draw(tile).rounded_rectangle(
+        [at(74, 269), at(270, 408)], radius=24 * u, fill=white + (255,))
+
+    # The crescent: an r150 circle bitten by a much larger r218 one. Composited
+    # through its own mask so the bite restores whatever is underneath rather
+    # than a flat colour that would band against the gradient.
     moon = Image.new("L", (n, n), 0)
     md = ImageDraw.Draw(moon)
-    # Thickness is the constraint, not elegance. Near-equal radii give the
-    # slim crescent you would draw at poster size and about 1.7 pixels of
-    # white at 16, which greys out; a smaller bite offset further down-left
-    # keeps roughly 2.5 pixels at the waist, which survives.
-    ox, oy, r_out = n * 0.700, n * 0.280, n * 0.175
-    md.ellipse([ox - r_out, oy - r_out, ox + r_out, oy + r_out], fill=255)
-    ix, iy, r_in = n * 0.628, n * 0.376, n * 0.140
-    md.ellipse([ix - r_in, iy - r_in, ix + r_in, iy + r_in], fill=0)
-    tile.paste(Image.new("RGB", (n, n), accent_screen), (0, 0), moon)
+    md.ellipse([at(317 - 150, 207 - 150), at(317 + 150, 207 + 150)], fill=255)
+    md.ellipse([at(160 - 218, 302 - 218), at(160 + 218, 302 + 218)], fill=0)
+    tile.paste(Image.new("RGBA", (n, n), white + (255,)), (0, 0), moon)
 
-    tile.putalpha(mask)
     return tile.resize((size, size), Image.LANCZOS)
 
 

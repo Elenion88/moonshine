@@ -17,3 +17,22 @@ desktop.ini
 # Local state (lives in %APPDATA%\moonshine / ~/.config/moonshine, but never commit a stray copy)
 sessions/
 *.log
+
+# Build output. PyInstaller writes both; the version resource and the .icns are
+# generated from brand.py and assets, so neither is worth tracking.
+build/
+dist/
+packaging/version_info.txt
+*.egg-info/
+assets/*.icns
+
+# Electron app
+app/node_modules/
+app/out/
+app/dist/
+app/*.tsbuildinfo
+# Generated from the Python assets by app/resources/generate-assets.py
+app/resources/tray/
+app/resources/covers/
+app/resources/icon.png
+app/resources/icon.ico

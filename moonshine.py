@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """
 moonshine - low-latency remote desktop over Tailscale.
 
@@ -223,6 +226,50 @@ def run(cmd: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
 # entries are noise in a menu you are trying to click through quickly.
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Where we are installed
+# --------------------------------------------------------------------------
+
+FROZEN = bool(getattr(sys, "frozen", False))
+
+
+def bundle_dir() -> str:
+    """The directory holding the code and the files that ship beside it.
+
+    PyInstaller unpacks bundled data into a temporary directory and points
+    `sys._MEIPASS` at it, so `__file__` is the wrong answer in a frozen build -
+    it names a path inside the archive that nothing can open. Every read of a
+    shipped file goes through here instead.
+    """
+    if FROZEN:
+        return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def cli_command() -> list[str]:
+    """The argv prefix that runs this CLI, called from inside a GUI app.
+
+    The apps shell out to the CLI rather than importing it, so that a session
+    started from a menu goes through the same path gate and writes the same
+    session log as one started by hand. That needs a command line, and what it
+    looks like depends on how we are installed.
+
+    Frozen, the CLI is a console executable beside the windowed one: Windows
+    fixes the subsystem at link time, so a GUI build cannot print to a console
+    and the two cannot be the same binary. `sys.executable` is the GUI, and
+    there is no `.py` left to hand an interpreter. From source it is the
+    running interpreter plus this file.
+    """
+    if not FROZEN:
+        return [sys.executable, os.path.join(bundle_dir(), "moonshine.py")]
+    name = f"{APP_ID}.exe" if sys.platform == "win32" else APP_ID
+    exe = os.path.join(os.path.dirname(sys.executable), name)
+    if os.path.exists(exe):
+        return [exe]
+    # A build that shipped only one binary, or the CLI calling itself.
+    return [sys.executable]
+
+
 def state_dir() -> str:
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or os.path.expanduser("~")
@@ -286,7 +333,7 @@ def hidden_hosts() -> set[str]:
 
 def asset_path(name: str) -> str:
     """An icon or image that ships beside the code, by filename."""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", name)
+    return os.path.join(bundle_dir(), "assets", name)
 
 
 def session_marker_path() -> str:
@@ -396,7 +443,7 @@ class Peer:
     online: bool
     ip: str
     # The address tailscale is actually using for this peer, e.g.
-    # "192.168.0.195:41641" when the path is direct over the LAN, or empty when
+    # "192.168.1.50:41641" when the path is direct over the LAN, or empty when
     # the traffic is being relayed. This is what makes LAN-direct possible
     # without any discovery of our own.
     cur_addr: str = ""
@@ -431,8 +478,8 @@ def tailscale_peers(ts: str) -> list[Peer]:
 # Even on a direct path, Tailscale still moves every packet through userspace
 # WireGuard. Measured against one machine reachable both ways:
 #
-#     ICMP via the tunnel (100.126.31.123) : 4.33 ms mean, 2-9 ms spread
-#     ICMP over the LAN   (192.168.0.169)  : 0 ms, no spread at all
+#     ICMP via the tunnel (100.101.10.24) : 4.33 ms mean, 2-9 ms spread
+#     ICMP over the LAN   (192.168.1.51)   : 0 ms, no spread at all
 #
 # So when both machines are on the same network there is about 4 ms and nearly
 # all the jitter to reclaim by addressing the host directly. Tailscale already
@@ -496,8 +543,8 @@ def lan_endpoint(peer: Peer) -> str | None:
     return address if _port_open(address, SUNSHINE_PORT) else None
 
 
-# `pong from macbook (100.80.245.37) via 192.168.0.195:52433 in 8ms`
-# `pong from macbook (100.80.245.37) via DERP(den) in 49ms`
+# `pong from macbook (100.101.10.22) via 192.168.1.50:52433 in 8ms`
+# `pong from macbook (100.101.10.22) via DERP(den) in 49ms`
 PONG_RE = re.compile(r"via\s+(?P<route>DERP\([a-z]+\)|[\d.]+:\d+)\s+in\s+(?P<ms>\d+)ms")
 
 

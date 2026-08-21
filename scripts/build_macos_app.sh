@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 # Build Moonshine.app - a real macOS bundle for the window app.
 #
 # A bundle is what makes this a real application rather than a script: it gets a

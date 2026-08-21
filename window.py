@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """
 remote - desktop window.
 
@@ -46,7 +49,7 @@ PROFILE_LABELS = {
 class RemoteWindow:
     def __init__(self) -> None:
         ui.enable_hidpi()
-        ui.claim_taskbar_identity()
+        ui.claim_taskbar_identity(brand.BUNDLE_ID)
         self.root = tk.Tk()
         self.root.title(brand.NAME)
 

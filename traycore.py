@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Austin
+
 """
 Shared logic for the remote tray/menu-bar apps.
 
@@ -269,19 +272,19 @@ def profiles_for(host: HostStatus) -> list[str]:
 
 
 def run_setup() -> None:
-    """Run `remote setup` in a visible terminal so its output can be read."""
-    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "moonshine.py")
+    """Run `moonshine setup` in a visible terminal so its output can be read."""
+    argv = moonshine.cli_command() + ["setup"]
 
     if sys.platform == "win32":
+        quoted = " ".join(f'"{part}"' for part in argv)
         subprocess.Popen(
-            ["cmd", "/c", "start", "", "cmd", "/k",
-             f'"{sys.executable}" "{script}" setup'],
+            ["cmd", "/c", "start", "", "cmd", "/k", quoted],
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
     else:
         # osascript so the output lands in Terminal rather than a log file the
         # user would have to know about.
-        cmd = f'{shlex_quote(sys.executable)} {shlex_quote(script)} setup'
+        cmd = " ".join(shlex_quote(part) for part in argv)
         subprocess.Popen(
             ["osascript", "-e",
              f'tell application "Terminal" to do script "{cmd}"',
@@ -298,8 +301,7 @@ def shlex_quote(value: str) -> str:
 def launch_session(host: str, profile: str, app: str = "Desktop",
                    overlay: bool = False) -> None:
     """Start a stream via the CLI, so the path gate and session log still apply."""
-    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "moonshine.py")
-    cmd = [sys.executable, script, "connect", host, app, "--profile", profile]
+    cmd = moonshine.cli_command() + ["connect", host, app, "--profile", profile]
     if overlay:
         cmd.append("--overlay")
 
