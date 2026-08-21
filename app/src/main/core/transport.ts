@@ -14,13 +14,19 @@
  * those terms, so adding a way to connect means adding a file here rather than
  * editing the app.
  *
- * Three exist today. The interesting one is the one that does not: a
- * hole-punched direct connection with our own coordination, which is what makes
- * this app work for someone who has never heard of Tailscale. It plugs in here.
+ * Four exist. The account one is the answer to "what about someone who has
+ * never heard of Tailscale": sign in on two machines and they find each other
+ * through our coordinator, which holds a device registry and nothing else.
+ *
+ * What is still missing from it is NAT traversal. The coordinator exchanges
+ * addresses; it does not punch holes and it does not relay. So the account
+ * transport reaches peers on the same network, and peers that are reachable at
+ * the address they reported, and not yet anything behind two NATs.
  */
 
 import net from 'node:net'
 
+import { knownPeers } from './account'
 import { NVSTREAM_SERVICE, browse } from './mdns'
 import { loadConfig, saveConfig } from './paths'
 import {
@@ -39,7 +45,7 @@ import {
   worst
 } from './tailscale'
 
-export type TransportId = 'tailscale' | 'lan' | 'manual'
+export type TransportId = 'tailscale' | 'lan' | 'manual' | 'account'
 
 export interface Candidate {
   transport: TransportId
@@ -77,7 +83,8 @@ export interface Route extends Candidate {
 export const TRANSPORT_LABELS: Record<TransportId, string> = {
   tailscale: 'Tailscale',
   lan: 'Local network',
-  manual: 'Saved address'
+  manual: 'Saved address',
+  account: 'Your account'
 }
 
 /**
@@ -149,6 +156,44 @@ async function discoverLan(): Promise<Candidate[]> {
       os: '',
       online: true
     })
+  }
+  return found
+}
+
+// --------------------------------------------------------------------------
+// The account
+// --------------------------------------------------------------------------
+
+/**
+ * Peers the coordinator told us about, at every address they reported.
+ *
+ * One candidate per address rather than one per peer, because which of them
+ * works is not knowable without trying: a peer on the same network answers on
+ * its local address, one behind a router answers on its observed address only
+ * if something forwarded the port, and measuring is how we find out. They
+ * collapse into one host with several routes, and the ranking picks.
+ */
+function discoverAccount(): Candidate[] {
+  const found: Candidate[] = []
+
+  for (const peer of knownPeers()) {
+    const addresses = [
+      ...peer.endpoints.filter((endpoint) => endpoint.kind === 'local').map((e) => e.address),
+      ...(peer.observedIp ? [peer.observedIp] : [])
+    ]
+
+    for (const address of [...new Set(addresses)].slice(0, 4)) {
+      found.push({
+        transport: 'account',
+        address,
+        name: peer.name,
+        os: peer.os,
+        // Online here means "checked in recently", which is a claim about the
+        // coordinator's view, not about whether we can reach it. Measurement
+        // is what settles that.
+        online: peer.online
+      })
+    }
   }
   return found
 }
@@ -231,7 +276,10 @@ export async function discoverAll(): Promise<Candidate[]> {
   const results = await Promise.allSettled([
     discoverTailscale(),
     discoverLan(),
-    discoverManual()
+    discoverManual(),
+    // Already in memory - the heartbeat keeps it current on its own timer -
+    // so this costs nothing and cannot fail.
+    Promise.resolve(discoverAccount())
   ])
   return dedupe(
     results.flatMap((result) => (result.status === 'fulfilled' ? result.value : []))

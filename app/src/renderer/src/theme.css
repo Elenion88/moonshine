@@ -633,3 +633,48 @@ a:focus-visible {
 .add-host input::placeholder {
   color: var(--faint);
 }
+
+/* ---- account ---- */
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 30rem;
+}
+
+.account-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.account-form label span {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.account-form input {
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 11px;
+  user-select: text;
+}
+
+.account-form input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.account-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}

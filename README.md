@@ -41,6 +41,22 @@ before you click anything.
 | 🔴 red | Relayed through DERP - will stutter |
 | ⚪ grey | Nothing online |
 
+## Four ways in
+
+Tailscale is the best of them, not the only one. Moonshine looks for a machine
+every way it can and uses whichever answers best:
+
+| | Needs |
+|---|---|
+| **Tailscale** | signed in on both machines |
+| **Local network** | being on the same network — nothing else at all |
+| **Your account** | signing in, so two machines can find each other |
+| **Saved address** | knowing an address |
+
+A machine reachable several ways is listed once, with the routes behind a
+disclosure. The local network wins when it answers, because it has the least in
+the middle.
+
 ## What you need first
 
 Moonshine does not install or configure any of these, and does not join a
@@ -130,6 +146,7 @@ python moonshine.py list                 # the CLI
 
 ```
 app/               The app: TypeScript, React, Electron. The product.
+server/            The coordinator: accounts and a device registry
 moonshine.py       The CLI, and the Tailscale/profile logic it shares
 brand.py           Every user-visible name, in one place
 chrome.py          Our title and icon on Moonlight's window (ctypes, Windows)

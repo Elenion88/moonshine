@@ -36,3 +36,8 @@ app/resources/tray/
 app/resources/covers/
 app/resources/icon.png
 app/resources/icon.ico
+
+# Coordinator
+server/node_modules/
+server/dist/
+server/data/

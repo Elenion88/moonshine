@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
 
+import { AccountPanel } from './components/AccountPanel'
 import { HostRow } from './components/HostRow'
 import { Mark } from './components/Mark'
 import { SetupPanel } from './components/SetupPanel'
@@ -59,6 +60,7 @@ export function App(): JSX.Element {
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [showSetup, setShowSetup] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
   const [adding, setAdding] = useState(false)
   const [manualName, setManualName] = useState('')
   const [manualAddress, setManualAddress] = useState('')
@@ -163,6 +165,16 @@ export function App(): JSX.Element {
           </button>
           <button
             className="btn ghost"
+            onClick={() => {
+              setShowAccount((open) => !open)
+              setShowSetup(false)
+            }}
+            title="Sign in so your machines can find each other"
+          >
+            {showAccount ? 'Hosts' : 'Account'}
+          </button>
+          <button
+            className="btn ghost"
             onClick={() => setAdding((open) => !open)}
             title="Reach a machine by address, without Tailscale"
           >
@@ -170,14 +182,17 @@ export function App(): JSX.Element {
           </button>
           <button
             className="btn ghost"
-            onClick={() => setShowSetup((open) => !open)}
+            onClick={() => {
+              setShowSetup((open) => !open)
+              setShowAccount(false)
+            }}
             title="Check Sunshine, the firewall and capture permissions on this machine"
           >
             {showSetup ? 'Hosts' : 'Set up'}
           </button>
           <button
             className="btn"
-            disabled={snapshot.refreshing || showSetup}
+            disabled={snapshot.refreshing || showSetup || showAccount}
             onClick={() => void window.moonshine.status.refresh()}
           >
             {snapshot.refreshing ? 'Measuring…' : 'Refresh'}
@@ -253,7 +268,14 @@ export function App(): JSX.Element {
         </div>
       )}
 
-      {showSetup ? (
+      {showAccount ? (
+        <main className="hosts">
+          <AccountPanel
+            onClose={() => setShowAccount(false)}
+            onChanged={() => void window.moonshine.status.get().then(setSnapshot)}
+          />
+        </main>
+      ) : showSetup ? (
         <main className="hosts">
           <SetupPanel onClose={() => setShowSetup(false)} />
         </main>

@@ -13,6 +13,7 @@ import { join } from 'node:path'
 
 import { BrowserWindow, Menu, Tray, app, nativeImage, nativeTheme, shell } from 'electron'
 
+import { resume, stopHeartbeat } from './core/account'
 import { NAME, SUBTITLE } from './core/brand'
 import { sessionsDir } from './core/paths'
 import { profilesFor } from './core/profiles'
@@ -181,6 +182,10 @@ if (!app.requestSingleInstanceLock()) {
     createWindow()
     createTray()
 
+    // Start checking in before the first measurement, so a signed-in machine
+    // has its peers by the time the window paints.
+    void resume()
+
     status.on('change', applySnapshot)
     status.start()
 
@@ -193,6 +198,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     quitting = true
     status.stop()
+    stopHeartbeat()
   })
 
   // Deliberately no window-all-closed quit: closing the window leaves the tray

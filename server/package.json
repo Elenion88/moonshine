@@ -1,0 +1,20 @@
+{
+  "name": "moonshine-coordinator",
+  "version": "0.1.0",
+  "description": "Account and device registry for Moonshine.",
+  "license": "GPL-3.0-or-later",
+  "author": "Austin",
+  "type": "module",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --experimental-sqlite dist/index.js",
+    "dev": "tsc -p tsconfig.json && node --experimental-sqlite dist/index.js --insecure",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

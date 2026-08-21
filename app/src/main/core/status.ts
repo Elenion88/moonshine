@@ -164,7 +164,8 @@ export class StatusCache extends EventEmitter {
   }
 
   private timer: NodeJS.Timeout | null = null
-  private running = false
+  /** The refresh currently in flight, so a second caller can wait for it. */
+  private running: Promise<StatusSnapshot> | null = null
 
   current(): StatusSnapshot {
     return this.snapshot
@@ -199,8 +200,27 @@ export class StatusCache extends EventEmitter {
    *   during a session. Automatic refreshes never do.
    */
   async refresh(manual: boolean): Promise<StatusSnapshot> {
-    if (this.running) return this.snapshot
-    this.running = true
+    if (this.running) {
+      // Someone pressed Refresh while a scheduled one was already running.
+      // Returning the current snapshot looks like the button did nothing - and
+      // during a session it is worse than that, because the scheduled run
+      // deliberately measured nothing and its result is a set of placeholders.
+      // Wait for it to finish, then actually measure.
+      if (!manual) return this.snapshot
+      await this.running.catch(() => undefined)
+      return this.refresh(true)
+    }
+
+    const run = this.run(manual)
+    this.running = run
+    try {
+      return await run
+    } finally {
+      this.running = null
+    }
+  }
+
+  private async run(manual: boolean): Promise<StatusSnapshot> {
     this.emitSnapshot({ refreshing: true })
 
     try {
@@ -279,8 +299,6 @@ export class StatusCache extends EventEmitter {
         refreshing: false,
         error: error instanceof Error ? error.message : String(error)
       })
-    } finally {
-      this.running = false
     }
 
     return this.snapshot

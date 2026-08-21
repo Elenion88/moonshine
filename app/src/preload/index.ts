@@ -37,6 +37,16 @@ const api = {
     connect: (request: unknown) => ipcRenderer.invoke('session:connect', request)
   },
 
+  account: {
+    state: () => ipcRenderer.invoke('account:state'),
+    setServer: (url: string) => ipcRenderer.invoke('account:setServer', url),
+    signUp: (email: string, password: string) =>
+      ipcRenderer.invoke('account:signUp', email, password),
+    signIn: (email: string, password: string) =>
+      ipcRenderer.invoke('account:signIn', email, password),
+    signOut: () => ipcRenderer.invoke('account:signOut')
+  },
+
   setup: {
     checks: () => ipcRenderer.invoke('setup:checks'),
     action: (id: string) => ipcRenderer.invoke('setup:action', id)

@@ -13,7 +13,7 @@
 
 export type Health = 'ok' | 'degraded' | 'relayed' | 'offline'
 
-export type TransportId = 'tailscale' | 'lan' | 'manual'
+export type TransportId = 'tailscale' | 'lan' | 'manual' | 'account'
 
 export interface RouteSummary {
   transport: TransportId
@@ -109,6 +109,21 @@ export interface ActionResult {
   message: string
 }
 
+export interface AccountState {
+  signedIn: boolean
+  email: string | null
+  serverUrl: string
+  deviceId: string | null
+  deviceName: string
+  observed: string | null
+  error: string | null
+}
+
+export interface AuthResult {
+  ok: boolean
+  message: string
+}
+
 export interface AppInfo {
   name: string
   subtitle: string
@@ -142,6 +157,13 @@ export interface MoonshineApi {
       overlay?: boolean
       force?: boolean
     }): Promise<ConnectResult>
+  }
+  account: {
+    state(): Promise<AccountState>
+    setServer(url: string): Promise<void>
+    signUp(email: string, password: string): Promise<AuthResult>
+    signIn(email: string, password: string): Promise<AuthResult>
+    signOut(): Promise<StatusSnapshot>
   }
   setup: {
     checks(): Promise<SetupReport>

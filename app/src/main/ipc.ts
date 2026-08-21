@@ -11,6 +11,7 @@
 
 import { ipcMain, shell } from 'electron'
 
+import * as account from './core/account'
 import { NAME, SUBTITLE, VERSION } from './core/brand'
 import { recentSessions, sessionsDir, setHidden } from './core/paths'
 import { PROFILES, SHORTCUTS, profilesFor } from './core/profiles'
@@ -53,6 +54,23 @@ export function registerIpc(status: StatusCache): void {
     // means the cache should learn there is a session before its next tick.
     if (result.started) void status.refresh(false)
     return result
+  })
+
+  ipcMain.handle('account:state', () => account.state())
+  ipcMain.handle('account:setServer', (_event, url: string) => account.setServerUrl(url))
+  ipcMain.handle('account:signUp', async (_event, email: string, password: string) => {
+    const result = await account.signUp(email, password)
+    if (result.ok) void status.refresh(true)
+    return result
+  })
+  ipcMain.handle('account:signIn', async (_event, email: string, password: string) => {
+    const result = await account.signIn(email, password)
+    if (result.ok) void status.refresh(true)
+    return result
+  })
+  ipcMain.handle('account:signOut', async () => {
+    await account.signOut()
+    return status.refresh(true)
   })
 
   ipcMain.handle('setup:checks', () => runChecks())

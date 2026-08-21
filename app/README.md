@@ -54,7 +54,17 @@ path. Three exist:
 |---|---|---|
 | Tailscale | `tailscale status` | Tailscale signed in |
 | Local network | Sunshine's own mDNS advertisement | being on the same network |
+| Your account | the coordinator's device registry | signing in |
 | Saved address | what you typed | nothing |
+
+`core/account.ts` is the account one: it registers this machine, checks in every
+minute with the addresses it can see on its own interfaces, and gets back where
+its siblings said they were. The token is encrypted with the OS keychain through
+Electron's `safeStorage` rather than sitting in a JSON file in the clear.
+
+The coordinator exchanges addresses and nothing else - it is not a relay, so it
+can reach a peer on the same network or one whose port is forwarded, and not yet
+anything behind two routers. `server/README.md` has the rest.
 
 `core/mdns.ts` is a small mDNS client written out rather than pulled in - the
 query is one packet and the reply is one well-specified format, and a package
