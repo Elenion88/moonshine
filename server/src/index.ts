@@ -34,6 +34,7 @@ import {
   validPassword,
   verifyPassword
 } from './auth.js'
+import { issueTicket, startRendezvous } from './rendezvous.js'
 import {
   createToken,
   createUser,
@@ -55,6 +56,9 @@ const PORT = Number(
 )
 const DB_PATH = process.env.MOONSHINE_DB ?? './data/coordinator.db'
 const TRUST_PROXY = process.env.MOONSHINE_TRUST_PROXY === '1'
+
+/** The rendezvous listens on UDP at the same number as the HTTP port. */
+const UDP_PORT = Number(process.env.MOONSHINE_UDP_PORT ?? PORT)
 
 /** Bodies here are a few hundred bytes. Anything larger is not a mistake. */
 const MAX_BODY = 64 * 1024
@@ -286,6 +290,19 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     })
   }
 
+  if (path === '/v1/punch/ticket' && method === 'POST') {
+    const body = (await readBody(request)) as { deviceId?: unknown }
+    if (typeof body.deviceId !== 'string') {
+      return send(response, 400, { error: 'deviceId is required' })
+    }
+    // Short-lived, single-purpose, and not the bearer token: the packets it
+    // authenticates are unencrypted UDP.
+    return send(response, 200, {
+      ticket: issueTicket(body.deviceId, userId),
+      udpPort: UDP_PORT
+    })
+  }
+
   const deviceMatch = /^\/v1\/devices\/([^/]+)$/.exec(path)
   if (deviceMatch && method === 'DELETE') {
     const removed = deleteDevice(decodeURIComponent(deviceMatch[1] as string), userId)
@@ -332,6 +349,8 @@ function main(): void {
       send(response, /body/.test(message) ? 400 : 500, { error: message })
     })
   })
+
+  startRendezvous(UDP_PORT)
 
   server.listen(PORT, () => {
     console.log(`moonshine coordinator on :${PORT}  db=${DB_PATH}`)

@@ -73,6 +73,10 @@ export function registerIpc(status: StatusCache): void {
     return status.refresh(true)
   })
 
+  ipcMain.handle('account:testDirect', (_event, deviceId: string) =>
+    account.testDirect(deviceId)
+  )
+
   ipcMain.handle('setup:checks', () => runChecks())
   ipcMain.handle('setup:action', async (_event, id: string) => {
     const result = await runAction(id)

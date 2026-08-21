@@ -25,10 +25,10 @@ single most important property here, and everything else follows from it:
 - It never holds video. The only things it knows are which machines belong to
   which account and what addresses they last reported.
 
-The cost of that is the thing it cannot do: it exchanges addresses, it does not
-punch holes. Two machines on one network find each other; two behind separate
-routers do not, unless a port is forwarded. **Hole punching is the next piece,
-and it goes here.**
+The cost of that is the thing it still cannot do. It now punches holes - see
+below - but carrying a *stream* over a punched path needs a tunnel, and that is
+not built. Two machines on one network reach each other; two behind separate
+routers can prove they have a path, and cannot yet use it.
 
 ## API
 
@@ -45,11 +45,41 @@ All JSON. Everything except `/health`, `/v1/signup` and `/v1/login` needs
 | `GET /v1/devices` | every device on the account |
 | `DELETE /v1/devices/:id` | forget one |
 | `POST /v1/heartbeat` | `{deviceId, endpoints}` → `{observed, peers}` |
+| `POST /v1/punch/ticket` | `{deviceId}` → `{ticket, udpPort}` |
 
 `heartbeat` is where the work happens. A device says where it thinks it is, and
 is told where its siblings said they were — plus `observed`, the address this
 service sees it coming from. That is the useful half of what a STUN server does,
 for free, because the client already had to connect here.
+
+## The rendezvous
+
+A UDP socket on the same port number as the HTTP server, and the reason two
+machines behind routers can reach each other at all.
+
+A NAT forwards an inbound packet only if something inside sent one outward to
+that address first. So there is no "server" side to a punch: both machines have
+to send at roughly the same moment, each opening the mapping the other's packet
+needs. The rendezvous answers where and when:
+
+1. `{t:'bind'}` — tells a device what address its packets appear to come from,
+   which is the one thing a machine behind a router cannot work out for itself,
+   and remembers the mapping.
+2. `{t:'connect', target}` — answers the asker with the target's address *and*
+   pokes the target through the mapping it has been keeping open, so both start
+   sending at once. That poke is the whole technique.
+
+Then they talk directly and this service is out of the loop.
+
+Mappings expire in 90 seconds and clients re-bind every 20, because routers drop
+theirs in as little as 30.
+
+**Authentication is a short-lived ticket, not the bearer token.** These packets
+are unencrypted UDP; putting a long-lived credential in them would trade a
+session for a session's worth of eavesdropping. A ticket lasts 60 seconds, names
+one device, and is checked against the account before any address is handed
+over — so knowing a device id is not enough to have this service point a
+stranger at someone else's machine.
 
 ## No dependencies
 
@@ -92,8 +122,12 @@ persistent volume for `MOONSHINE_DB`.
 
 ## Still to do
 
-- **Hole punching.** The reason this service exists at all is to make the next
-  step possible; today it only gets you as far as directly reachable machines.
+- **The tunnel.** Punching produces a verified UDP path between two ephemeral
+  ports. Sunshine listens on its own TCP and UDP ports, and carrying those over
+  that path is the remaining work - and the point of everything above.
+- **Testing against real NATs.** The protocol is verified on loopback, which
+  proves the exchange and the synchronisation and traverses nothing. Two
+  machines on different networks are needed to prove the rest.
 - **Email verification and password reset.** Neither exists. An address is
   currently just a username.
 - **Device authentication.** A device is identified by an id it chooses, under a

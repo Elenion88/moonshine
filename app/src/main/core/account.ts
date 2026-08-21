@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto'
 import { safeStorage } from 'electron'
 
 import { loadConfig, saveConfig } from './paths'
+import { Puncher, type PunchResult } from './punch'
 import { SUNSHINE_PORT } from './tailscale'
 
 export interface Endpoint {
@@ -45,6 +46,7 @@ export interface AccountPeer {
 
 export interface AccountState {
   signedIn: boolean
+  peers: AccountPeer[]
   email: string | null
   serverUrl: string
   deviceId: string | null
@@ -73,6 +75,17 @@ let peers: AccountPeer[] = []
 let observed: string | null = null
 let lastError: string | null = null
 let heartbeat: NodeJS.Timeout | null = null
+
+/**
+ * One puncher for the whole app, held open while signed in.
+ *
+ * It must be one socket and it must stay open: the router's mapping belongs to
+ * a source port, so opening a fresh socket per attempt would get a fresh
+ * mapping and throw away the hole that was already made. Keeping it alive is
+ * also what lets the coordinator poke this machine when a peer asks for it.
+ */
+let puncher: Puncher | null = null
+let punchKeepAlive: NodeJS.Timeout | null = null
 
 async function stored(): Promise<StoredAccount> {
   const config = await loadConfig()
@@ -158,6 +171,7 @@ export async function state(): Promise<AccountState> {
   const account = await stored()
   return {
     signedIn: Boolean(decrypt(account)),
+    peers,
     email: account.email ?? null,
     serverUrl: account.serverUrl ?? DEFAULT_SERVER,
     deviceId: account.deviceId ?? null,
@@ -302,6 +316,7 @@ export function knownPeers(): AccountPeer[] {
 export function startHeartbeat(): void {
   if (heartbeat) return
   void beat()
+  void startPunching()
   heartbeat = setInterval(() => void beat(), HEARTBEAT_MS)
   heartbeat.unref?.()
 }
@@ -309,6 +324,96 @@ export function startHeartbeat(): void {
 export function stopHeartbeat(): void {
   if (heartbeat) clearInterval(heartbeat)
   heartbeat = null
+  stopPunching()
+}
+
+// --------------------------------------------------------------------------
+// Hole punching
+// --------------------------------------------------------------------------
+
+function coordinatorHost(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return '127.0.0.1'
+  }
+}
+
+/**
+ * Open the UDP side and keep it open.
+ *
+ * Nothing streams over this yet. What it buys today is the ability to answer
+ * "could these two machines reach each other directly?" - and, more
+ * importantly, it keeps this machine's mapping current so that when the far
+ * side asks, the coordinator has somewhere to poke.
+ */
+async function startPunching(): Promise<void> {
+  if (puncher) return
+  const account = await stored()
+  const token = decrypt(account)
+  if (!token || !account.deviceId) return
+
+  try {
+    const ticketResponse = await call('/v1/punch/ticket', {
+      method: 'POST',
+      token,
+      body: { deviceId: account.deviceId }
+    })
+    if (ticketResponse.status >= 400) return
+
+    const next = new Puncher(
+      {
+        address: coordinatorHost(account.serverUrl ?? DEFAULT_SERVER),
+        port: Number(ticketResponse.body.udpPort ?? 8787)
+      },
+      String(ticketResponse.body.ticket)
+    )
+    if (!(await next.open())) {
+      next.close()
+      return
+    }
+    puncher = next
+    punchKeepAlive = next.keepAlive()
+  } catch {
+    // No rendezvous available. Everything else still works; only the direct
+    // test does not, and it reports that for itself.
+  }
+}
+
+function stopPunching(): void {
+  if (punchKeepAlive) clearInterval(punchKeepAlive)
+  punchKeepAlive = null
+  puncher?.close()
+  puncher = null
+}
+
+/**
+ * Can we reach this peer directly, through whatever routers are in the way?
+ *
+ * A real answer, and an honestly limited one: it establishes a UDP path between
+ * two ephemeral ports. Carrying a stream over that path needs a tunnel, which
+ * is not built yet.
+ */
+export async function testDirect(deviceId: string): Promise<PunchResult> {
+  if (!puncher) await startPunching()
+  if (!puncher) {
+    return {
+      ok: false,
+      peer: null,
+      rttMs: null,
+      reflexive: null,
+      reason: 'the coordinator has no rendezvous, or it could not be reached'
+    }
+  }
+
+  const peer = peers.find((candidate) => candidate.id === deviceId)
+  // The peer's own interface addresses cost nothing to try and are what works
+  // when both machines happen to be on the same network.
+  const extra = (peer?.endpoints ?? [])
+    .filter((endpoint) => endpoint.kind === 'local')
+    .map((endpoint) => ({ address: endpoint.address, port: endpoint.port }))
+
+  return puncher.attempt(deviceId, extra)
 }
 
 /** Called once at startup, so a signed-in machine starts checking in. */

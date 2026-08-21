@@ -116,8 +116,27 @@ export interface ActionResult {
   message: string
 }
 
+export interface AccountPeer {
+  id: string
+  name: string
+  os: string
+  online: boolean
+  lastSeen: number
+  observedIp: string | null
+  endpoints: Array<{ kind: string; address: string; port: number }>
+}
+
+export interface PunchResult {
+  ok: boolean
+  peer: { address: string; port: number } | null
+  rttMs: number | null
+  reflexive: { address: string; port: number } | null
+  reason: string | null
+}
+
 export interface AccountState {
   signedIn: boolean
+  peers: AccountPeer[]
   email: string | null
   serverUrl: string
   deviceId: string | null
@@ -172,6 +191,7 @@ export interface MoonshineApi {
     signUp(email: string, password: string): Promise<AuthResult>
     signIn(email: string, password: string): Promise<AuthResult>
     signOut(): Promise<StatusSnapshot>
+    testDirect(deviceId: string): Promise<PunchResult>
   }
   setup: {
     checks(): Promise<SetupReport>

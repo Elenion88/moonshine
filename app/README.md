@@ -62,9 +62,16 @@ minute with the addresses it can see on its own interfaces, and gets back where
 its siblings said they were. The token is encrypted with the OS keychain through
 Electron's `safeStorage` rather than sitting in a JSON file in the clear.
 
-The coordinator exchanges addresses and nothing else - it is not a relay, so it
-can reach a peer on the same network or one whose port is forwarded, and not yet
-anything behind two routers. `server/README.md` has the rest.
+`core/punch.ts` is the hole punching. One UDP socket, held open for as long as
+the app is signed in - it has to be one socket, because the router's mapping
+belongs to a source port, and opening a fresh one per attempt would throw away
+the hole already made. **Test direct** in the account panel reports whether a
+path was established and its round trip.
+
+What punching does not yet do is carry a stream. Sunshine listens on its own
+ports, and moving those over a punched path needs a tunnel. Until that exists
+the account transport reaches machines on one network and machines whose port is
+forwarded. `server/README.md` has the rest.
 
 `core/mdns.ts` is a small mDNS client written out rather than pulled in - the
 query is one packet and the reply is one well-specified format, and a package

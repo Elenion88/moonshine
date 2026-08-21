@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState, type JSX } from 'react'
 
-import type { AccountState } from '../types'
+import type { AccountState, PunchResult } from '../types'
 
 interface AccountPanelProps {
   onClose: () => void
@@ -17,6 +17,8 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
   const [server, setServer] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+  const [testing, setTesting] = useState<string | null>(null)
+  const [results, setResults] = useState<Record<string, PunchResult>>({})
 
   const load = useCallback(async () => {
     const next = await window.moonshine.account.state()
@@ -59,6 +61,16 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
       setBusy(false)
     }
   }, [load, onChanged])
+
+  const testDirect = useCallback(async (deviceId: string) => {
+    setTesting(deviceId)
+    try {
+      const result = await window.moonshine.account.testDirect(deviceId)
+      setResults((current) => ({ ...current, [deviceId]: result }))
+    } finally {
+      setTesting(null)
+    }
+  }, [])
 
   return (
     <div className="setup">
@@ -112,6 +124,58 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
             </button>
           </div>
 
+          {state.peers.length > 0 && (
+            <>
+              <p className="check-note" style={{ marginTop: 4 }}>
+                Your other machines. <strong>Test direct</strong> tries to punch a path
+                through both routers and reports whether it worked.
+              </p>
+              {state.peers.map((peer) => {
+                const result = results[peer.id]
+                return (
+                  <div className="check" key={peer.id}>
+                    <span
+                      className={`check-glyph ${peer.online ? 'ok' : 'warn'}`}
+                      aria-hidden="true"
+                    >
+                      {peer.online ? '✓' : '!'}
+                    </span>
+                    <div className="check-body">
+                      <div className="check-line">
+                        <span className="check-label">{peer.name}</span>
+                        <span className="check-detail">
+                          {peer.online ? 'checked in' : 'not checked in recently'}
+                        </span>
+                      </div>
+                      {result && (
+                        <p className="check-note">
+                          {result.ok ? (
+                            <>
+                              Direct path established to{' '}
+                              <strong>
+                                {result.peer?.address}:{result.peer?.port}
+                              </strong>{' '}
+                              in {result.rttMs} ms.
+                            </>
+                          ) : (
+                            <>Could not get a direct path — {result.reason}</>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      className="btn"
+                      disabled={testing !== null}
+                      onClick={() => void testDirect(peer.id)}
+                    >
+                      {testing === peer.id ? 'Punching…' : 'Test direct'}
+                    </button>
+                  </div>
+                )
+              })}
+            </>
+          )}
+
           <div className="check">
             <span className="check-glyph info" aria-hidden="true">
               i
@@ -119,13 +183,15 @@ export function AccountPanel({ onClose, onChanged }: AccountPanelProps): JSX.Ele
             <div className="check-body">
               <div className="check-line">
                 <span className="check-label">What this reaches</span>
-                <span className="check-detail">directly reachable machines only</span>
+                <span className="check-detail">not the stream, yet</span>
               </div>
               <p className="check-note">
-                The coordinator swaps addresses between your machines. It never carries
-                the stream, so nothing to pay for and nothing to go down mid-session — but
-                it also cannot yet get through two routers. On one network, or with the
-                port forwarded, this works. Hole punching is the next piece.
+                The coordinator swaps addresses and never carries the stream, so there is
+                nothing to pay for and nothing to go down mid-session. Punching gets a
+                verified UDP path between two machines through their routers — but
+                Sunshine listens on its own ports, and carrying those over that path
+                needs a tunnel. That is the next piece. Until then this transport reaches
+                machines on one network and machines whose port is forwarded.
               </p>
             </div>
           </div>
