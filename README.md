@@ -67,7 +67,8 @@ tailnet or pair a host for you. That is the biggest rough edge in this release.
   same tailnet.
 - **Sunshine** on the machine you want to control, installed and paired.
   `winget install LizardByte.Sunshine` on Windows,
-  `brew install --cask sunshine` on macOS.
+  `brew install --cask sunshine` on macOS, `sudo pacman -S sunshine` on
+  Arch and Omarchy.
 - **Moonlight** on the machine you want to control it from.
 
 `moonshine setup` checks all of it, reports what is missing, and automates
@@ -83,6 +84,11 @@ no administrator account, and offers to start the tray at login and put the
 `moonshine` command on PATH.
 
 **macOS** - build it (see below). There is no signed release yet.
+
+**Linux** - build it (see below). Tested on Omarchy (Arch, Hyprland, Wayland)
+with the distro's `moonlight-qt` and `tailscale` packages. The app runs
+natively on Wayland and puts its status icon in any bar that speaks
+StatusNotifierItem.
 
 > **Nothing is code-signed yet.** Windows SmartScreen will warn, and macOS
 > Gatekeeper will refuse to open an unsigned bundle downloaded from the
@@ -120,7 +126,7 @@ live.
 
 ```
 %APPDATA%\moonshine\sessions\        (Windows)
-~/.config/moonshine/sessions/        (macOS)
+~/.config/moonshine/sessions/        (macOS, Linux)
 ```
 
 ## Building from source
@@ -130,6 +136,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # on Windows
 ```
 ```bash
 bash packaging/build.sh                                        # on macOS
+cd app && npm install && npm run dist                          # on Linux (AppImage)
 ```
 
 PyInstaller cannot cross-compile, so each platform's build has to run on that
@@ -166,8 +173,9 @@ is in the history.
 
 Pre-1.0, and honest about it. Moonshine has been run in earnest on exactly two
 machines - one Windows host with an RTX 3090 and one Apple Silicon MacBook. It
-has not been tested on Intel Macs, on non-NVIDIA hosts, on Linux, or with
-multiple monitors. [docs/DESIGN.md](docs/DESIGN.md) records what is known not
+has not been tested on Intel Macs, on non-NVIDIA hosts, or with multiple
+monitors. Linux has been run as a client on one Omarchy machine and not yet as
+a host. [docs/DESIGN.md](docs/DESIGN.md) records what is known not
 to work and why.
 
 Sunshine and Moonlight are separate programs. Moonshine launches them, it does

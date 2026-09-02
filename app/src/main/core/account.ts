@@ -309,7 +309,7 @@ async function registerDevice(): Promise<void> {
     body: {
       id,
       name: hostname(),
-      os: process.platform === 'win32' ? 'windows' : 'macos',
+      os: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
       // Published so a peer can derive a shared key with us. The coordinator
       // stores it and cannot use it - it brokers the exchange and cannot read
       // what the exchange protects.

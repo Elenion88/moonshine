@@ -169,6 +169,14 @@ function applySnapshot(snapshot: StatusSnapshot): void {
   }
 }
 
+// Run natively on Wayland when that is what the session is, instead of through
+// Xwayland - which blurs the window on a scaled display and loses the tray on
+// compositors that have no X11 tray at all. Harmless under X11: "auto" falls
+// back to it.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto')
+}
+
 // One instance. A second tray icon for the same machine is confusing, and two
 // status caches would double the probing this app works hard to avoid.
 if (!app.requestSingleInstanceLock()) {

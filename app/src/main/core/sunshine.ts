@@ -40,6 +40,18 @@ export const SUNSHINE_MACOS_CANDIDATES = [
  */
 export const MACOS_AGENT = 'homebrew.mxcl.sunshine'
 
+export const SUNSHINE_LINUX_CANDIDATES = [
+  '/usr/bin/sunshine',
+  '/usr/local/bin/sunshine',
+  '/var/lib/flatpak/exports/bin/dev.lizardbyte.app.Sunshine'
+]
+
+/**
+ * The distro packages ship a user unit, so Sunshine runs inside the graphical
+ * session where it can see the compositor - it has to, to capture it.
+ */
+export const LINUX_UNIT = 'sunshine'
+
 export const SETTINGS_PANES: Record<string, string> = {
   screen:
     'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
@@ -62,6 +74,10 @@ export function configDir(): string | null {
 
 export function macosBinary(): string | null {
   return SUNSHINE_MACOS_CANDIDATES.find((path) => existsSync(path)) ?? null
+}
+
+export function linuxBinary(): string | null {
+  return SUNSHINE_LINUX_CANDIDATES.find((path) => existsSync(path)) ?? null
 }
 
 function coversResourceDir(): string {
@@ -265,6 +281,14 @@ export async function restartSunshine(): Promise<Verdict> {
     return result.code === 0
       ? { ok: true, detail: 'Sunshine restarted' }
       : { ok: false, detail: result.stderr.trim() || 'could not restart the service' }
+  }
+  if (process.platform === 'linux') {
+    const result = await run('systemctl', ['--user', 'restart', LINUX_UNIT], {
+      timeoutMs: 60_000
+    })
+    return result.code === 0
+      ? { ok: true, detail: 'Sunshine restarted' }
+      : { ok: false, detail: result.stderr.trim() || 'systemctl could not restart it' }
   }
   const result = await run(
     'launchctl',

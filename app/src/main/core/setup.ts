@@ -18,6 +18,7 @@
  */
 
 import { existsSync } from 'node:fs'
+import { access, constants } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -25,10 +26,12 @@ import { shell } from 'electron'
 
 import { run } from './exec'
 import {
+  LINUX_UNIT,
   SETTINGS_PANES,
   brandSunshine,
   encoderVerdict,
   librariesVerdict,
+  linuxBinary,
   macosBinary,
   restartSunshine,
   tapTrusted
@@ -116,7 +119,9 @@ async function tailscaleCheck(): Promise<Check> {
       command:
         process.platform === 'win32'
           ? 'winget install tailscale.tailscale'
-          : 'brew install --cask tailscale'
+          : process.platform === 'darwin'
+            ? 'brew install --cask tailscale'
+            : 'sudo pacman -S tailscale && sudo systemctl enable --now tailscaled'
     }
   }
 
@@ -328,6 +333,101 @@ async function macosChecks(): Promise<Check[]> {
   return checks
 }
 
+/**
+ * Linux, as a stream host.
+ *
+ * Nothing here needs a password prompt or a settings pane. Sunshine is a user
+ * service, capture goes through the compositor, and the one permission that
+ * matters is a device node: /dev/uinput, which Sunshine opens to inject mouse
+ * and keyboard. The package ships a udev rule that grants it - but only from
+ * the next login, which is exactly the gap where "video works, input dead"
+ * lives.
+ */
+async function linuxChecks(): Promise<Check[]> {
+  const checks: Check[] = []
+
+  const binary = linuxBinary()
+  if (!binary) {
+    checks.push({
+      id: 'sunshine',
+      label: 'Sunshine',
+      state: 'bad',
+      detail: 'not installed',
+      command: 'sudo pacman -S sunshine',
+      note:
+        'Only needed to stream *from* this machine. Connecting to another ' +
+        'host needs Moonlight alone.'
+    })
+    return checks
+  }
+
+  const active = await run('systemctl', ['--user', 'is-active', LINUX_UNIT], {
+    timeoutMs: 20_000
+  })
+  const status = active.stdout.trim() || 'unknown'
+  checks.push(
+    status === 'active'
+      ? { id: 'sunshine', label: 'Sunshine', state: 'ok', detail: 'user service running' }
+      : {
+          id: 'sunshine',
+          label: 'Sunshine',
+          state: 'warn',
+          detail: `service is ${status}`,
+          action: { id: 'sunshine:restart', label: 'Start it' },
+          command: `systemctl --user enable --now ${LINUX_UNIT}`
+        }
+  )
+
+  const encoder = encoderVerdict()
+  checks.push({
+    id: 'encoder',
+    label: 'Encoder',
+    state: encoder.ok ? 'ok' : 'warn',
+    detail: encoder.detail
+  })
+
+  const session = process.env.XDG_SESSION_TYPE ?? 'unknown'
+  const desktop = process.env.XDG_CURRENT_DESKTOP ?? ''
+  checks.push({
+    id: 'capture',
+    label: 'Capture',
+    state: 'info',
+    detail:
+      session === 'wayland'
+        ? `Wayland${desktop ? ` (${desktop})` : ''} — captured through the compositor`
+        : `${session} session`,
+    note:
+      session === 'wayland'
+        ? 'Sunshine captures wlroots compositors such as Hyprland directly. ' +
+          'Others go through the screencast portal, which asks once per boot.'
+        : undefined
+  })
+
+  let uinput = false
+  try {
+    await access('/dev/uinput', constants.W_OK)
+    uinput = true
+  } catch {
+    // Not writable, or not present. Both mean input will not work.
+  }
+  checks.push(
+    uinput
+      ? { id: 'permissions', label: 'Input permission', state: 'ok', detail: '/dev/uinput is writable' }
+      : {
+          id: 'permissions',
+          label: 'Input permission',
+          state: 'bad',
+          detail: '/dev/uinput is not writable — the mouse and keyboard will be dead',
+          command: 'sudo usermod -aG input $USER   # then log out and back in',
+          note:
+            "Sunshine's udev rule grants this to the `input` group. Group " +
+            'membership only applies from the next login.'
+        }
+  )
+
+  return checks
+}
+
 export async function runChecks(): Promise<SetupReport> {
   const checks: Check[] = [await tailscaleCheck()]
 
@@ -336,14 +436,16 @@ export async function runChecks(): Promise<SetupReport> {
       ? await windowsChecks()
       : process.platform === 'darwin'
         ? await macosChecks()
-        : [
-            {
-              id: 'sunshine',
-              label: 'Sunshine',
-              state: 'info' as CheckState,
-              detail: `no setup routine for ${process.platform} yet`
-            }
-          ])
+        : process.platform === 'linux'
+          ? await linuxChecks()
+          : [
+              {
+                id: 'sunshine',
+                label: 'Sunshine',
+                state: 'info' as CheckState,
+                detail: `no setup routine for ${process.platform} yet`
+              }
+            ])
   )
 
   // Branding last: it is the only check that changes anything by running, and

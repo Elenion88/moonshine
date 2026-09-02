@@ -51,7 +51,13 @@ export const MOONLIGHT_CANDIDATES = [
   '/Applications/Moonlight.app/Contents/MacOS/Moonlight',
   'C:\\Program Files\\Moonlight Game Streaming\\Moonlight.exe',
   '/opt/homebrew/bin/moonlight',
-  '/usr/local/bin/moonlight'
+  '/usr/local/bin/moonlight',
+  // Linux. Arch and Omarchy install moonlight-qt as plain `moonlight`; Debian
+  // and Fedora keep the package name. Flatpak exports a wrapper.
+  '/usr/bin/moonlight',
+  '/usr/bin/moonlight-qt',
+  '/var/lib/flatpak/exports/bin/com.moonlight_stream.Moonlight',
+  join(homedir(), '.local/share/flatpak/exports/bin/com.moonlight_stream.Moonlight')
 ]
 
 const SUNSHINE_LOGS = [
